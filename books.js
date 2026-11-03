@@ -79,6 +79,47 @@ var FGB = (function () {
     return s;
   }
 
+  /* ── Smart customer matching ──
+     "2026-30 Wesco Phoenix" → Wesco. Learns from your corrections:
+     if you change an imported customer and save, that name maps there from then on. */
+  var ALIAS = 'fgb-cust-alias';
+  function norm(s) {
+    return String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ')
+      .replace(/\b(inc|llc|co|corp|company|the)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function restAfter(raw, custNorm) {
+    var words = norm(raw).split(' '), cw = custNorm.split(' ');
+    for (var i = 0; i + cw.length <= words.length; i++) {
+      if (words.slice(i, i + cw.length).join(' ') === custNorm) { words.splice(i, cw.length); break; }
+    }
+    return words.join(' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
+  function matchCustomer(name, list) {
+    var raw = String(name || '').trim();
+    list = (list || []).filter(function (c) { return c && c !== 'Custom...'; });
+    if (!raw) return { customer: '', custom: '', rest: '', how: 'none' };
+    var n = norm(raw), aliases = json(ALIAS, {});
+    if (aliases[n] && list.indexOf(aliases[n]) >= 0) return { customer: aliases[n], custom: '', rest: '', how: 'learned' };
+    var exact = list.filter(function (c) { return norm(c) === n; })[0];
+    if (exact) return { customer: exact, custom: '', rest: '', how: 'exact' };
+    var best = null;
+    list.forEach(function (c) {
+      var nc = norm(c);
+      if (nc && (' ' + n + ' ').indexOf(' ' + nc + ' ') >= 0 && (!best || nc.length > norm(best).length)) best = c;
+    });
+    if (best) return { customer: best, custom: '', rest: restAfter(raw, norm(best)), how: 'contains' };
+    var fw = n.split(' ')[0];
+    var cands = list.filter(function (c) { return norm(c).split(' ')[0] === fw; });
+    if (fw.length >= 4 && cands.length === 1) return { customer: cands[0], custom: '', rest: restAfter(raw, fw), how: 'first-word' };
+    return { customer: 'Custom...', custom: raw, rest: '', how: 'new' };
+  }
+  function learnAlias(incoming, chosen) {
+    if (!incoming || !chosen || chosen === 'Custom...') return;
+    var a = json(ALIAS, {}), k = norm(incoming);
+    if (!k || norm(chosen) === k) return;
+    a[k] = chosen; set(ALIAS, JSON.stringify(a));
+  }
+
   /* ── Send to Ledger: drop the jobs in the shared mailbox, then open the Ledger ── */
   function sendToLedger(ledgerJobs) {
     var payload = { _fanguys_bridge: 'invoice->ledger', v: 1, exportedAt: new Date().toISOString(), jobs: ledgerJobs };
@@ -105,7 +146,7 @@ var FGB = (function () {
       var content = JSON.stringify({
         app: 'Fan Guys Books', v: 1, exportedAt: new Date().toISOString(),
         invoice: { jobs: inv.jobs || [], receipts: inv.receipts || [], images: images },
-        ledger: { years: years, customers: json(LED_CUSTS, []) }
+        ledger: { years: years, customers: json(LED_CUSTS, []), aliases: json(ALIAS, {}) }
       });
       var name = backupName(), file = null;
       try { file = new File([content], name, { type: 'application/json' }); } catch (e) {}
@@ -173,6 +214,11 @@ var FGB = (function () {
         set(LED_CUSTS, JSON.stringify(cs));
       } else set(LED_CUSTS, JSON.stringify(part.customers));
     }
+    if (part.aliases && typeof part.aliases === 'object') {
+      var al = json(ALIAS, {});
+      Object.keys(part.aliases).forEach(function (k) { if (!al[k]) al[k] = part.aliases[k]; });
+      set(ALIAS, JSON.stringify(al));
+    }
     set('fg_seeded_v1', 'restored');
     return r;
   }
@@ -220,6 +266,7 @@ var FGB = (function () {
   return {
     pin: pin, setPin: setPin, isUnlocked: isUnlocked, markUnlocked: markUnlocked,
     sentIds: sentIds, sendToLedger: sendToLedger,
+    matchCustomer: matchCustomer, learnAlias: learnAlias,
     backup: backup, markBackedUp: markBackedUp,
     mergeInvoice: mergeInvoice, mergeLedger: mergeLedger, isBooksBackup: isBooksBackup,
     detect: detect, parseLoose: parseLoose, restoreAny: restoreAny

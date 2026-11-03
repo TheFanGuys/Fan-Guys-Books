@@ -880,6 +880,12 @@ function saveJob(){
     notes:document.getElementById('f-notes').value,
     createdAt:editingId&&jobs.find(function(j){return j.id===editingId;})?jobs.find(function(j){return j.id===editingId;}).createdAt:new Date().toISOString()
   };
+  var prev=editingId?jobs.find(function(j){return j.id===editingId;}):null;
+  if(prev){
+    // keep the link back to the Invoices report, so it's never sent twice
+    if(prev.srcId) job.srcId=prev.srcId;
+    if(prev.srcCustomer){ job.srcCustomer=prev.srcCustomer; FGB.learnAlias(prev.srcCustomer, cust==='Custom...'?custName:cust); }
+  }
   if(editingId){var idx=jobs.findIndex(function(j){return j.id===editingId;});if(idx>=0)jobs[idx]=job;else jobs.push(job);}
   else{jobs.push(job);}
   saveJobs(); refreshLocations(); render(); closeForm();
@@ -1325,16 +1331,17 @@ function importFromInvoice(){
     // Custom name so it shows up (editable) in the form for you to confirm on Save.
     var incCust=(src.customer||'').trim();
     var cust='', custName='';
+    var srcLoc=src.location||'';
     if(incCust){
-      var matchC=customers.find(function(c){ return c.toLowerCase()===incCust.toLowerCase(); });
-      if(matchC){ cust=matchC; }
-      else { cust='Custom...'; custName=incCust; }
+      var mc=FGB.matchCustomer(incCust, customers);
+      cust=mc.customer; custName=mc.custom;
+      if(!srcLoc && mc.rest) srcLoc=mc.rest;   // "Wesco Phoenix" with no location → Phoenix
     }
 
     var job={
       id:newId, year:y,
       customer:cust, customCustomer:custName,
-      location:src.location||'',
+      location:srcLoc,
       jobDate:src.jobDate||'',
       jobType:src.jobType||'',
       installSubtype:src.installSubtype||'',
@@ -1351,6 +1358,7 @@ function importFromInvoice(){
       },
       notes:src.notes||'',
       srcId:src.srcId||'',
+      srcCustomer:incCust,
       createdAt:new Date().toISOString()
     };
     bucket.push(job);
