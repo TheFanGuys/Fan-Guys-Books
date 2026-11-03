@@ -38,9 +38,9 @@ var FGBDrive = (function () {
       "    var d = JSON.parse(e.postData.contents);",
       "    if (d.key !== KEY) throw new Error('Wrong key');",
       "    if (d.action === 'ping') out = { ok: true, who: Session.getActiveUser().getEmail() };",
-      "    else if (d.action === 'folder') out = folderInfo(jobFolder(d.year, d.job));",
+      "    else if (d.action === 'folder') out = folderInfo(jobFolder(d.parent, d.year, d.job));",
       "    else if (d.action === 'upload') {",
-      "      var f = jobFolder(d.year, d.job);",
+      "      var f = jobFolder(d.parent, d.year, d.job);",
       "      var old = f.getFilesByName(d.fileName);",
       "      while (old.hasNext()) old.next().setTrashed(true);",
       "      var blob = Utilities.newBlob(Utilities.base64Decode(d.base64), d.mime || 'application/pdf', d.fileName);",
@@ -51,15 +51,21 @@ var FGBDrive = (function () {
       "  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);",
       "}",
       "",
-      "// Year folder at the top of your Drive (uses yours if it's already there)",
-      "function yearFolder(year) {",
-      "  var name = String(year);",
-      "  var it = DriveApp.getRootFolder().getFoldersByName(name);",
-      "  return it.hasNext() ? it.next() : DriveApp.getRootFolder().createFolder(name);",
+      "// Company folder, like 'Go Fan Yourself' (found anywhere in your Drive; made at the top if missing)",
+      "function companyFolder(name) {",
+      "  if (!name) return DriveApp.getRootFolder();",
+      "  var it = DriveApp.getFoldersByName(name);",
+      "  while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) return f; }",
+      "  return DriveApp.getRootFolder().createFolder(name);",
+      "}",
+      "// Year folder inside it, like 2026 (uses yours if it's already there)",
+      "function yearFolder(parent, year) {",
+      "  var p = companyFolder(parent), name = String(year), it = p.getFoldersByName(name);",
+      "  return it.hasNext() ? it.next() : p.createFolder(name);",
       "}",
       "// Job folder inside the year folder (uses one you made by hand if the name matches)",
-      "function jobFolder(year, job) {",
-      "  var y = yearFolder(year), it = y.getFoldersByName(job);",
+      "function jobFolder(parent, year, job) {",
+      "  var y = yearFolder(parent, year), it = y.getFoldersByName(job);",
       "  var f = it.hasNext() ? it.next() : y.createFolder(job);",
       "  try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}",
       "  return f;",
@@ -88,18 +94,21 @@ var FGBDrive = (function () {
     return new Date().getFullYear();
   }
   function folderName(job) { return String(job && job.name || 'Job').replace(/[\/\\]/g, '-').trim() || 'Job'; }
+  function defaultParent() { var l = billTo(); return (l[0] && l[0].folder) || ''; }
   function savedFolder(job) { var m = json(K_FOLDERS, {}); return m[job.id] || null; }
-  function remember(job, d) {
+  function remember(job, d, parent) {
     var m = json(K_FOLDERS, {});
-    m[job.id] = { url: d.folderUrl, id: d.folderId, name: folderName(job), year: yearOf(job) };
+    m[job.id] = { url: d.folderUrl, id: d.folderId, name: folderName(job), year: yearOf(job), parent: parent || '' };
     set(K_FOLDERS, JSON.stringify(m));
     return m[job.id];
   }
+  function fresh(f, job, parent) { return f && f.name === folderName(job) && f.year === yearOf(job) && (f.parent || '') === (parent || ''); }
   /* Make (or find) the job folder. A renamed report gets its folder looked up again. */
-  function ensureFolder(job) {
+  function ensureFolder(job, parent) {
+    if (parent === undefined) { var sf = savedFolder(job); parent = sf ? (sf.parent || '') : defaultParent(); }
     var f = savedFolder(job);
-    if (f && f.name === folderName(job) && f.year === yearOf(job)) return Promise.resolve(f);
-    return call({ action: 'folder', year: yearOf(job), job: folderName(job) }).then(function (d) { return remember(job, d); });
+    if (fresh(f, job, parent)) return Promise.resolve(f);
+    return call({ action: 'folder', parent: parent, year: yearOf(job), job: folderName(job) }).then(function (d) { return remember(job, d, parent); });
   }
   function blobToBase64(blob) {
     return new Promise(function (res, rej) {
@@ -109,10 +118,10 @@ var FGBDrive = (function () {
       r.readAsDataURL(blob);
     });
   }
-  function upload(job, blob, fileName) {
+  function upload(job, blob, fileName, parent) {
     return blobToBase64(blob).then(function (b64) {
-      return call({ action: 'upload', year: yearOf(job), job: folderName(job), fileName: fileName, base64: b64, mime: 'application/pdf' });
-    }).then(function (d) { remember(job, d); return d; });
+      return call({ action: 'upload', parent: parent || '', year: yearOf(job), job: folderName(job), fileName: fileName, base64: b64, mime: 'application/pdf' });
+    }).then(function (d) { remember(job, d, parent); return d; });
   }
 
   /* ── bill-to contacts ── */
@@ -120,8 +129,9 @@ var FGBDrive = (function () {
   function billTo() {
     var list = json(K_BILL, null);
     if (!Array.isArray(list) || !list.length) {
-      list = [{ id: 'gfy', name: 'Vivid Air (GFY)', to: '', cc: '', subject: 'Invoice {job}', message: DEFAULT_MSG }];
+      list = [{ id: 'gfy', name: 'Vivid Air (GFY)', folder: 'Go Fan Yourself', to: '', cc: '', subject: 'Invoice {job}', message: DEFAULT_MSG }];
     }
+    list.forEach(function (c) { if (c.folder === undefined) c.folder = c.id === 'gfy' ? 'Go Fan Yourself' : ''; });
     return list;
   }
   function saveBillTo(list) { set(K_BILL, JSON.stringify(list)); }
@@ -171,7 +181,7 @@ var FGBDrive = (function () {
         return;
       }
       var s = sheet('<div class="fgb-fan" aria-hidden="true"></div><h2>Saving to Google Drive</h2><p>' + esc(folderName(job)) + '</p>');
-      return makeBlob().then(function (blob) { return upload(job, blob, fileName); }).then(function (d) {
+      return makeBlob().then(function (blob) { return upload(job, blob, fileName, c.folder || ''); }).then(function (d) {
         vals.link = d.folderUrl;
         s.set('<div class="fgb-done" aria-hidden="true">✓</div><h2>Saved to the job folder</h2><p>' + esc(fileName) + '</p>' +
           '<a class="fgb-go" href="' + esc(mailto(c, vals)) + '">Open email to ' + esc(c.name) + '</a>' +
@@ -188,7 +198,7 @@ var FGBDrive = (function () {
   /* ── Open job folder (makes it first if needed) ── */
   function openFolder(job) {
     var f = savedFolder(job);
-    if (f && f.name === folderName(job)) { window.open(f.url, '_blank'); return; }
+    if (f && fresh(f, job, f.parent || '')) { window.open(f.url, '_blank'); return; }
     var s = sheet('<div class="fgb-fan" aria-hidden="true"></div><h2>Finding the job folder</h2><p>' + esc(folderName(job)) + '</p>');
     ensureFolder(job).then(function (d) {
       s.set('<h2>Job folder is ready</h2><p>' + esc(folderName(job)) + '</p><a class="fgb-go" href="' + esc(d.url) + '" target="_blank" rel="noopener">Open in Google Drive</a><button class="fgb-cancel">Close</button>');
@@ -208,6 +218,7 @@ var FGBDrive = (function () {
         list.map(function (c, i) {
           return '<fieldset class="fgb-contact" data-i="' + i + '">' +
             '<label>Name<input data-f="name" value="' + esc(c.name) + '" autocomplete="organization"></label>' +
+            '<label>Google Drive folder (year folders go inside it)<input data-f="folder" value="' + esc(c.folder) + '" placeholder="Go Fan Yourself"></label>' +
             '<label>Send to (two emails, comma between)<input data-f="to" type="email" multiple inputmode="email" value="' + esc(c.to) + '" placeholder="name@company.com, name2@company.com"></label>' +
             '<label>Copy to (optional)<input data-f="cc" type="email" multiple inputmode="email" value="' + esc(c.cc) + '"></label>' +
             '<label>Subject<input data-f="subject" value="' + esc(c.subject) + '"></label>' +
@@ -228,7 +239,7 @@ var FGBDrive = (function () {
     draw();
     s.el.addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
-      if (b.classList.contains('fgb-add')) { readForm(); list.push({ id: 'c' + Date.now(), name: 'Other company', to: '', cc: '', subject: 'Invoice {job}', message: DEFAULT_MSG }); draw(); }
+      if (b.classList.contains('fgb-add')) { readForm(); list.push({ id: 'c' + Date.now(), name: 'Other company', folder: '', to: '', cc: '', subject: 'Invoice {job}', message: DEFAULT_MSG }); draw(); }
       else if (b.classList.contains('fgb-remove')) { readForm(); list.splice(+b.getAttribute('data-i'), 1); draw(); }
       else if (b.classList.contains('fgb-save')) { readForm(); saveBillTo(list); s.close(); if (onDone) onDone(); }
       else if (b.classList.contains('fgb-cancel')) s.close();
@@ -247,6 +258,7 @@ var FGBDrive = (function () {
         '<li><b>Open Google Apps Script</b> and tap New project. Delete what\'s there and paste.<a class="fgb-link" href="https://script.google.com/home" target="_blank" rel="noopener">Open script.google.com</a></li>' +
         '<li><b>Allow Drive:</b> pick <i>allowDrive</i> in the function menu, tap Run, and approve.</li>' +
         '<li><b>Deploy:</b> Deploy → New deployment → Web app. Execute as: Me. Who has access: Anyone. Copy the Web app URL.</li>' +
+        '<li><b>Where invoices go:</b> Drive → ' + esc(defaultParent() || 'My Drive') + ' → year (like 2026) → one folder per report. Change the folder in More → Bill to.</li>' +
         '<li><b>Paste the URL here:</b><input class="fgb-url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(url()) + '"></li>' +
         '</ol>' + (msg ? '<p class="fgb-msg">' + esc(msg) + '</p>' : '') +
         '<button class="fgb-go fgb-test">Save and test</button><button class="fgb-cancel">Close</button>');
