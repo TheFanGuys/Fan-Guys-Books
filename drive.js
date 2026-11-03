@@ -251,7 +251,9 @@ var FGBDrive = (function () {
       s.set('<h2>Google Drive</h2>' +
         (connected() ? '<p class="fgb-ok">Connected. Invoices save into your year and job folders.</p>' : '<p>One-time setup, about 10 minutes. Your Drive stays yours: a small script in your own Google account does the saving.</p>') +
         '<ol class="fgb-steps">' +
-        '<li><b>Copy the script.</b><button class="fgb-copy">Copy script</button>' +
+        '<li><b>Copy the script.</b>' +
+          (navigator.share ? '<button class="fgb-go fgb-sharescript">Share script → tap Copy</button>' : '') +
+          '<button class="fgb-copy">Copy script</button>' +
           '<button class="fgb-show">Copy didn\'t work? Show the script</button>' +
           '<div class="fgb-scriptbox" hidden><textarea readonly rows="8" class="fgb-script" aria-label="Script text"></textarea>' +
           '<button class="fgb-selall">Select all, then tap Copy</button></div></li>' +
@@ -270,6 +272,10 @@ var FGBDrive = (function () {
         var t = scriptText();
         (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copied. Now paste it in Google.'; })
           .catch(function () { var sh = s.el.querySelector('.fgb-show'); if (sh) sh.click(); });
+      } else if (b.classList.contains('fgb-sharescript')) {
+        navigator.share({ title: 'Fan Guys Drive script', text: scriptText() })
+          .then(function () { b.textContent = 'Done. Now paste it in Google.'; })
+          .catch(function (err) { if (!err || err.name !== 'AbortError') { var sh = s.el.querySelector('.fgb-show'); if (sh) sh.click(); } });
       } else if (b.classList.contains('fgb-show')) {
         var box = s.el.querySelector('.fgb-scriptbox'), ta = s.el.querySelector('.fgb-script');
         ta.value = scriptText(); box.hidden = false; b.hidden = true;
