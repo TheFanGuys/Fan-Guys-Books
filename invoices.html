@@ -2834,6 +2834,8 @@ function openJobMenu(e, job, receipts, onEdit, onDelete) {
 function renderJobList() {
   var db=dbGet();
   var search='';
+  var selecting=false, picked={};   // "Email several" mode
+  FGBDrive.onEmailed=function(){ selecting=false; picked={}; redraw(); };
 
   function redraw(){
     db=dbGet();
@@ -2872,6 +2874,18 @@ function renderJobList() {
     si.style.cssText='background:none;border:none;outline:none;color:#fff;font-size:15px;flex:1';
     si.addEventListener('input',function(){ search=si.value; redraw(); });
     sb.appendChild(si); screen.appendChild(sb);
+    var withRecs=db.jobs.filter(function(j){ return db.receipts.some(function(r){ return r.jobId===j.id; }); });
+    if(!search && withRecs.length>1){
+      var tools=div({className:'fgb-tools'});
+      if(selecting){
+        tools.appendChild(span({className:'fgb-tools-note'},'Tap the reports to email together'));
+      } else {
+        var manyBtn=btn({className:'fgb-chip'}); manyBtn.textContent='Email several';
+        manyBtn.addEventListener('click',function(){ selecting=true; picked={}; redraw(); });
+        tools.appendChild(manyBtn);
+      }
+      screen.appendChild(tools);
+    }
 
     // Backup reminder — a backup you never take is not a backup
     var dsb=daysSinceBackup();
@@ -2895,7 +2909,7 @@ function renderJobList() {
     }
 
     var ledIdx=FGB.ledgerIndex();
-    if(!search && db.jobs.length){
+    if(!search && db.jobs.length && !selecting){
       var nowD=new Date(), ym=nowD.toISOString().slice(0,7), yr=String(nowD.getFullYear());
       var mTot=0, yTot=0;
       db.receipts.forEach(function(r){ var a=+r.amount||0; if((r.date||'').slice(0,7)===ym) mTot+=a; if((r.date||'').slice(0,4)===yr) yTot+=a; });
@@ -2926,6 +2940,8 @@ function renderJobList() {
       left.appendChild(div({className:'where'},[(where||'No dates yet')+'  \u00b7  '+recs.length+' receipt'+(recs.length!==1?'s':'')+(job.archivedAt?'  \u00b7  Archived':'')]));
       if(recs.length) left.appendChild(wireTags(recs));
       var srow=div({className:'status-row'});
+      var em=FGBDrive.emailedOn(job);
+      if(em) srow.appendChild(span({className:'pill-mail'},'Emailed '+new Date(em).toLocaleDateString('en-US',{month:'short',day:'numeric'})));
       if(inLedger){ srow.appendChild(span({className:'pill-in'},'In ledger')); }
       else if(recs.length){
         var sendBtn=btn({className:'pill-send'}); sendBtn.textContent='Send to ledger';
@@ -2955,19 +2971,47 @@ function renderJobList() {
         });
         return b;
       })(job, recs);
-      right.appendChild(dotBtn);
+      if(selecting){
+        var box=span({className:'fgb-check'+(picked[job.id]?' on':'')}); box.setAttribute('aria-hidden','true');
+        right.appendChild(box);
+        if(!recs.length) card.classList.add('no-pick');
+        if(picked[job.id]) card.classList.add('picked');
+        card.setAttribute('role','checkbox'); card.setAttribute('aria-checked', picked[job.id]?'true':'false'); card.tabIndex=0;
+      } else right.appendChild(dotBtn);
       card.appendChild(right);
 
-      card.addEventListener('click',function(){ renderJobDetail(job); });
+      card.addEventListener('click',function(){
+        if(selecting){ if(!recs.length) return; if(picked[job.id]) delete picked[job.id]; else picked[job.id]=true; redraw(); return; }
+        renderJobDetail(job);
+      });
       list.appendChild(card);
     });
 
     screen.appendChild(list);
 
+    if(selecting){
+      var n=Object.keys(picked).length;
+      var bar=div({className:'fgb-pickbar'});
+      var cancel=btn({className:'fgb-pick-cancel'}); cancel.textContent='Cancel';
+      cancel.addEventListener('click',function(){ selecting=false; picked={}; redraw(); });
+      var go=btn({className:'fgb-pick-go'}); go.textContent=n ? 'Email '+n+' invoice'+(n!==1?'s':'') : 'Pick reports';
+      go.disabled=!n;
+      go.addEventListener('click',function(){
+        var d2=dbGet();
+        var items=d2.jobs.filter(function(j){ return picked[j.id]; }).map(function(j){
+          var r=d2.receipts.filter(function(x){ return x.jobId===j.id; });
+          return { job:j, makeBlob:function(){ return buildPDF(j, r, {blob:true}); } };
+        });
+        FGBDrive.emailJobs(items);
+      });
+      bar.appendChild(cancel); bar.appendChild(go);
+      screen.appendChild(bar);
+    } else {
     // Tab bar
     screen.appendChild(makeTabBar(function(){
       openJobSheet(function(j){ db=dbGet(); db.jobs=[j].concat(db.jobs); dbSave(db); if(FGBDrive.connected()) FGBDrive.ensureFolder(j).catch(function(){}); redraw(); renderJobDetail(j); });
     }));
+    }
 
     _root.innerHTML=''; _root.appendChild(screen);
     if(search){ var si2=screen.querySelector('input[type=text]'); if(si2){si2.focus();si2.setSelectionRange(si2.value.length,si2.value.length);} }

@@ -169,7 +169,7 @@ var FGB = (function () {
         app: 'Fan Guys Books', v: 1, exportedAt: new Date().toISOString(),
         invoice: { jobs: inv.jobs || [], receipts: inv.receipts || [], images: images },
         ledger: { years: years, customers: json(LED_CUSTS, []), aliases: json(ALIAS, {}) },
-        settings: { billTo: json('fgb-billto', null), folders: json('fgb-folders', null), driveUrl: get('fgb-drive-url'), driveKey: get('fgb-drive-key') }
+        settings: { billTo: json('fgb-billto', null), folders: json('fgb-folders', null), driveUrl: get('fgb-drive-url'), driveKey: get('fgb-drive-key'), emailed: json('fgb-emailed', null) }
       });
       var name = backupName(), file = null;
       try { file = new File([content], name, { type: 'application/json' }); } catch (e) {}
@@ -298,6 +298,7 @@ var FGB = (function () {
       if (st.folders && !get('fgb-folders')) set('fgb-folders', JSON.stringify(st.folders));
       if (st.driveUrl && !get('fgb-drive-url')) set('fgb-drive-url', st.driveUrl);
       if (st.driveKey && !get('fgb-drive-key')) set('fgb-drive-key', st.driveKey);
+      if (st.emailed && !get('fgb-emailed')) set('fgb-emailed', JSON.stringify(st.emailed));
     }
     if (kind === 'ledger') {
       ledPart = Array.isArray(d) ? { years: {} } : d;

@@ -258,3 +258,20 @@ body.fgb-ledger{--bg:var(--air);--s1:var(--card);--s2:var(--card);--s3:var(--sof
 .fgb-sheet .fgb-show{display:block;width:100%;background:none;border:none;color:var(--teal-ink);font-size:13.5px;font-weight:600;padding:10px 0 0;text-align:left}
 .fgb-sheet .fgb-script{font-family:ui-monospace,Menlo,monospace;font-size:12px!important;line-height:1.35;height:160px}
 .fgb-sheet .fgb-selall{display:block;width:100%;background:var(--ink);color:#fff;border:none;border-radius:14px;padding:13px;font-size:15px;font-weight:600;margin-top:8px}
+
+/* Email several */
+.fgb-invoices .fgb-tools{display:flex;justify-content:flex-end;align-items:center;padding:0 16px 8px;min-height:34px}
+.fgb-invoices .fgb-chip{background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:999px;font-size:13px;font-weight:600;padding:7px 14px;min-height:34px}
+.fgb-invoices .fgb-tools-note{font-size:13px;color:var(--ink2);font-weight:600}
+.fgb-invoices .fgb-check{width:24px;height:24px;border-radius:50%;border:2px solid var(--line2);display:block;margin:4px 4px 0 0;box-sizing:border-box}
+.fgb-invoices .fgb-check.on{background:var(--ink);border-color:var(--ink);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12l4 4 8-8'/%3E%3C/svg%3E");background-size:16px;background-position:center;background-repeat:no-repeat}
+.fgb-invoices .rep-strip.picked{box-shadow:0 0 0 2px var(--ink)}
+.fgb-invoices .rep-strip.no-pick{opacity:.5}
+.fgb-invoices .rep-strip .pill-send{display:inline-block}
+.fgb-invoices .fgb-pickbar{flex-shrink:0;display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--card);border-top:1px solid var(--line)}
+.fgb-invoices .fgb-pick-cancel{flex:0 0 auto;background:var(--soft);border:none;color:var(--ink);border-radius:14px;padding:14px 18px;font-size:15px;font-weight:600}
+.fgb-invoices .fgb-pick-go{flex:1;background:var(--ink);border:none;color:#fff;border-radius:14px;padding:14px;font-size:16px;font-weight:600}
+.fgb-invoices .fgb-pick-go:disabled{background:var(--line2);color:var(--ink2)}
+.pill-mail{display:inline-block;font-size:12px;font-weight:600;color:#2F4F8F;background:#E3EAF7;border-radius:999px;padding:4px 10px;margin-right:6px}
+.status-row{justify-content:flex-start!important}
+.status-row .pill-send{margin-left:auto}

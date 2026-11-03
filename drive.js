@@ -177,33 +177,85 @@ var FGBDrive = (function () {
     });
   }
 
-  /* ── Email invoice: PDF → job folder → Spark ── */
-  function emailInvoice(job, total, makeBlob) {
+  /* ── "Emailed" tags: set when you open the email from the app ── */
+  var K_EMAILED = 'fgb-emailed';
+  function emailedOn(job) { var m = json(K_EMAILED, {}); return m[job.id] || null; }
+  function markEmailed(jobs) {
+    var m = json(K_EMAILED, {}), t = new Date().toISOString();
+    jobs.forEach(function (j) { m[j.id] = t; });
+    set(K_EMAILED, JSON.stringify(m));
+    if (typeof api.onEmailed === 'function') { try { api.onEmailed(); } catch (e) {} }
+  }
+
+  /* One email for one or many jobs */
+  function jobNo(job) { var m = String(job.name || '').match(/^([0-9][0-9\-\/.]*[0-9]|[0-9]+)\s/); return m ? m[1] : folderName(job); }
+  function mailtoFor(contact, done) {
+    if (done.length === 1) return mailto(contact, { job: folderName(done[0].job), link: done[0].link || '' });
+    var names = done.map(function (d) { return jobNo(d.job); }).join(', ');
+    var subj = String(contact.subject || 'Invoice {job}');
+    subj = /\{job\}/.test(subj) ? subj.replace(/^Invoice\b/, 'Invoices').replace('{job}', names) : subj + ' ' + names;
+    var lines = done.map(function (d) { return '• ' + folderName(d.job) + (d.link ? ': ' + d.link : ''); }).join('\n');
+    var msg = String(contact.message || DEFAULT_MSG);
+    var body;
+    if (msg === DEFAULT_MSG || !/\{link\}/.test(msg)) {
+      var parts = msg.split(/\n\n/);
+      var hello = parts[0] || 'Hi,', bye = parts.length > 1 ? parts[parts.length - 1] : 'Thanks,\nFan Guys';
+      body = hello + '\n\nHere are the invoices and job photos:\n' + lines + '\n\n' + bye;
+    } else {
+      body = msg.replace(/[^\n]*\{link\}[^\n]*/, lines).replace(/\{job\}/g, 'these jobs').replace(/\n{3,}/g, '\n\n');
+    }
+    var q = ['subject=' + encodeURIComponent(subj), 'body=' + encodeURIComponent(body)];
+    if (contact.cc) q.unshift('cc=' + encodeURIComponent(contact.cc.replace(/\s+/g, '')));
+    return 'mailto:' + encodeURIComponent(String(contact.to || '').replace(/\s+/g, '')).replace(/%2C/g, ',').replace(/%40/g, '@') + '?' + q.join('&');
+  }
+  function finish(s, c, done, title, note) {
+    var jobs = done.map(function (d) { return d.job; });
+    s.set(title + (note ? '<p>' + note + '</p>' : '') +
+      '<a class="fgb-go fgb-open-mail" href="' + esc(mailtoFor(c, done)) + '">Open email to ' + esc(c.name) + '</a>' +
+      '<button class="fgb-cancel">Close</button>');
+    s.el.addEventListener('click', function (e) {
+      if (e.target.closest('.fgb-open-mail')) { markEmailed(jobs); setTimeout(s.close, 300); }
+      else if (e.target.closest('.fgb-cancel')) s.close();
+    });
+  }
+  /* items = [{ job, makeBlob }] — each PDF goes to its own job folder, then one email */
+  function emailJobs(items) {
+    if (!items || !items.length) return Promise.resolve();
     return chooseContact().then(function (c) {
       if (!c) return;
       if (!String(c.to || '').trim()) { alert('Add the email addresses for ' + c.name + ' first: More → Bill to.'); return; }
-      var fileName = (folderName(job) + ' Invoice.pdf').replace(/\s+/g, ' ');
-      var vals = { job: folderName(job), total: total, link: '' };
+      var one = items.length === 1;
       if (!connected()) {
-        var s0 = sheet('<h2>Email invoice</h2><p>Google Drive isn\'t connected, so the email won\'t have a link. Connect it in More → Google Drive.</p>' +
-          '<a class="fgb-go" href="' + esc(mailto(c, vals)) + '">Open email</a><button class="fgb-cancel">Cancel</button>');
-        s0.el.addEventListener('click', function (e) { if (e.target.closest('a,.fgb-cancel')) setTimeout(s0.close, 300); });
+        var s0 = sheet('');
+        finish(s0, c, items.map(function (it) { return { job: it.job }; }),
+          '<h2>Email ' + (one ? 'invoice' : items.length + ' invoices') + '</h2>',
+          'Google Drive isn\'t connected, so the email won\'t have links. Connect it in More → Google Drive.');
         return;
       }
-      var s = sheet('<div class="fgb-fan" aria-hidden="true"></div><h2>Saving to Google Drive</h2><p>' + esc(folderName(job)) + '</p>');
-      return makeBlob().then(function (blob) { return upload(job, blob, fileName, c.folder || ''); }).then(function (d) {
-        vals.link = d.folderUrl;
-        s.set('<div class="fgb-done" aria-hidden="true">✓</div><h2>Saved to the job folder</h2><p>' + esc(fileName) + '</p>' +
-          '<a class="fgb-go" href="' + esc(mailto(c, vals)) + '">Open email to ' + esc(c.name) + '</a>' +
-          '<button class="fgb-cancel">Close</button>');
-        s.el.addEventListener('click', function (e) { if (e.target.closest('a,.fgb-cancel')) setTimeout(s.close, 300); });
-      }).catch(function (err) {
-        s.set('<h2>Couldn\'t save to Drive</h2><p>' + esc(err.message) + '</p>' +
-          '<a class="fgb-go" href="' + esc(mailto(c, vals)) + '">Open email without the link</a><button class="fgb-cancel">Close</button>');
-        s.el.addEventListener('click', function (e) { if (e.target.closest('a,.fgb-cancel')) setTimeout(s.close, 300); });
+      var s = sheet('<div class="fgb-fan" aria-hidden="true"></div><h2>Saving to Google Drive</h2><p class="fgb-prog"></p>');
+      var done = [], failed = [];
+      return items.reduce(function (p, it, i) {
+        return p.then(function () {
+          var pr = s.el.querySelector('.fgb-prog');
+          if (pr) pr.textContent = (one ? '' : (i + 1) + ' of ' + items.length + ': ') + folderName(it.job);
+          var fileName = (folderName(it.job) + ' Invoice.pdf').replace(/\s+/g, ' ');
+          return it.makeBlob().then(function (blob) { return upload(it.job, blob, fileName, c.folder || ''); })
+            .then(function (d) { done.push({ job: it.job, link: d.folderUrl }); })
+            .catch(function (err) { failed.push({ job: it.job, err: err }); done.push({ job: it.job, link: '' }); });
+        });
+      }, Promise.resolve()).then(function () {
+        var ok = done.length - failed.length;
+        var title = failed.length
+          ? '<h2>' + (ok ? 'Saved ' + ok + ' of ' + done.length : 'Couldn\'t save to Drive') + '</h2>'
+          : '<div class="fgb-done" aria-hidden="true">✓</div><h2>' + (one ? 'Saved to the job folder' : 'Saved ' + ok + ' invoices to their job folders') + '</h2>';
+        var note = failed.length
+          ? esc(failed.map(function (f) { return folderName(f.job) + ': ' + f.err.message; }).join('. ')) + '. Those go in the email without a link.'
+          : (one ? esc(folderName(done[0].job)) + ' Invoice.pdf' : '');
+        finish(s, c, done, title, note);
       });
     });
   }
+  function emailInvoice(job, total, makeBlob) { return emailJobs([{ job: job, makeBlob: makeBlob }]); }
 
   /* ── Open job folder (makes it first if needed) ── */
   function openFolder(job) {
@@ -304,11 +356,13 @@ var FGBDrive = (function () {
     });
   }
 
-  return {
+  var api = {
+    emailJobs: emailJobs, emailedOn: emailedOn, markEmailed: markEmailed, onEmailed: null,
     editBillTo: editBillTo, setupDrive: setupDrive,
     connected: connected, url: url, setUrl: setUrl, key: key, scriptText: scriptText, ping: ping,
     yearOf: yearOf, folderName: folderName, ensureFolder: ensureFolder, savedFolder: savedFolder,
     billTo: billTo, saveBillTo: saveBillTo, mailto: mailto, emailInvoice: emailInvoice, openFolder: openFolder,
     sheet: sheet, esc: esc
   };
+  return api;
 })();
