@@ -240,7 +240,10 @@ var FGBDrive = (function () {
       s.set('<h2>Google Drive</h2>' +
         (connected() ? '<p class="fgb-ok">Connected. Invoices save into your year and job folders.</p>' : '<p>One-time setup, about 10 minutes. Your Drive stays yours: a small script in your own Google account does the saving.</p>') +
         '<ol class="fgb-steps">' +
-        '<li><b>Copy the script.</b><button class="fgb-copy">Copy script</button></li>' +
+        '<li><b>Copy the script.</b><button class="fgb-copy">Copy script</button>' +
+          '<button class="fgb-show">Copy didn\'t work? Show the script</button>' +
+          '<div class="fgb-scriptbox" hidden><textarea readonly rows="8" class="fgb-script" aria-label="Script text"></textarea>' +
+          '<button class="fgb-selall">Select all, then tap Copy</button></div></li>' +
         '<li><b>Open Google Apps Script</b> and tap New project. Delete what\'s there and paste.<a class="fgb-link" href="https://script.google.com/home" target="_blank" rel="noopener">Open script.google.com</a></li>' +
         '<li><b>Allow Drive:</b> pick <i>allowDrive</i> in the function menu, tap Run, and approve.</li>' +
         '<li><b>Deploy:</b> Deploy → New deployment → Web app. Execute as: Me. Who has access: Anyone. Copy the Web app URL.</li>' +
@@ -253,8 +256,16 @@ var FGBDrive = (function () {
       var b = e.target.closest('button'); if (!b) return;
       if (b.classList.contains('fgb-copy')) {
         var t = scriptText();
-        (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copied'; })
-          .catch(function () { window.prompt('Select all and copy:', t); });
+        (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { b.textContent = 'Copied. Now paste it in Google.'; })
+          .catch(function () { var sh = s.el.querySelector('.fgb-show'); if (sh) sh.click(); });
+      } else if (b.classList.contains('fgb-show')) {
+        var box = s.el.querySelector('.fgb-scriptbox'), ta = s.el.querySelector('.fgb-script');
+        ta.value = scriptText(); box.hidden = false; b.hidden = true;
+      } else if (b.classList.contains('fgb-selall')) {
+        var t2 = s.el.querySelector('.fgb-script');
+        t2.removeAttribute('readonly'); t2.focus(); t2.select(); t2.setSelectionRange(0, t2.value.length);
+        try { if (document.execCommand('copy')) b.textContent = 'Copied. Now paste it in Google.'; } catch (e2) {}
+        t2.setAttribute('readonly', '');
       } else if (b.classList.contains('fgb-test')) {
         setUrl(s.el.querySelector('.fgb-url').value);
         if (!connected()) { draw('That link should start with https://script.google.com/'); return; }

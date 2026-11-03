@@ -255,3 +255,6 @@ body.fgb-ledger{--bg:var(--air);--s1:var(--card);--s2:var(--card);--s3:var(--sof
 .fgb-invoices .action-row{color:var(--teal-ink)}
 .fgb-invoices .sheet-card .detail-meta,.fgb-invoices .sheet-card [class*="detail"] span{color:inherit}
 .fgb-blades path{stroke:var(--ink);stroke-width:1;stroke-linejoin:round}
+.fgb-sheet .fgb-show{display:block;width:100%;background:none;border:none;color:var(--teal-ink);font-size:13.5px;font-weight:600;padding:10px 0 0;text-align:left}
+.fgb-sheet .fgb-script{font-family:ui-monospace,Menlo,monospace;font-size:12px!important;line-height:1.35;height:160px}
+.fgb-sheet .fgb-selall{display:block;width:100%;background:var(--ink);color:#fff;border:none;border-radius:14px;padding:13px;font-size:15px;font-weight:600;margin-top:8px}
