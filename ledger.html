@@ -181,7 +181,7 @@ iframe{width:100%;height:72vh;border-radius:10px;border:none;background:#fff}
 </style>
 <script src="books.js"></script>
 <script>try{localStorage.setItem('fgb-last','ledger')}catch(e){}</script>
-<link rel="stylesheet" href="panel.css">
+<link rel="stylesheet" href="airflow.css">
 </head>
 <body class="fgb fgb-ledger">
 <!-- ============ PIN LOCK SCREEN ============ -->
@@ -1462,6 +1462,7 @@ renderCard = function(j){
     '<div class="strip'+(open?' open':'')+'" onclick="toggleCard(\''+h(id)+'\')">' +
       '<div class="handle"><b>'+h(num)+'</b><span class="job-chevron'+(open?' open':'')+'" style="display:none"></span></div>' +
       '<div class="sbody">' +
+        '<div class="jobno">'+h(j.id)+'</div>' +
         '<div class="l1"><div class="cust">'+(nm?h(nm):'No customer')+'</div><div class="amt">'+usd(j.invoiceAmount)+'</div></div>' +
         '<div class="where">'+(j.location?h(j.location):'No location')+(ds?' · '+ds:'')+flag+'</div>' +
         (wires?'<div class="wires">'+wires+'</div>':'') +
@@ -1487,11 +1488,15 @@ render = function(){
   if(!tBar||!list) return;
   var tI=0,tL=0,tE=0; jobs.forEach(function(j){ tI+=n(j.invoiceAmount); tL+=n(j.labor); tE+=n(j.totalExpenses); });
   var plate=document.getElementById('fgb-plate');
-  if(!plate){ plate=document.createElement('section'); plate.id='fgb-plate'; plate.className='plate'; list.parentNode.insertBefore(plate, list); }
+  if(plate) plate.parentNode.removeChild(plate);
+  var now=new Date(), isNow=(currentYear===now.getFullYear());
+  var monthInv=0; jobs.forEach(function(j){ if(j.jobDate && j.jobDate.slice(0,7)===now.toISOString().slice(0,7)) monthInv+=n(j.invoiceAmount); });
+  var avgMonth = isNow ? tI/Math.max(1, now.getMonth()+1) : tI/12;
+  plate=FGB.fan({ amount: usd(tI), pace: isNow && avgMonth>0 ? monthInv/avgMonth : 1,
+    label: 'Invoiced in '+currentYear+(isNow ? '. The fan spins at this month\'s pace.' : '.') });
+  plate.id='fgb-plate';
+  list.parentNode.insertBefore(plate, list);
   plate.style.display = jobs.length ? '' : 'none';
-  plate.innerHTML='<i class="rv a"></i><i class="rv b"></i><i class="rv c"></i><i class="rv d"></i>'+
-    '<div class="what">Invoiced in '+currentYear+'</div><div class="big">'+usd(tI)+'</div>'+
-    '<div class="split"><div><b>'+usd(tL)+'</b><span>Labor</span></div><div><b>'+usd(tE)+'</b><span>Expenses</span></div></div>';
   tBar.style.display='none';
   var cl=document.getElementById('fgb-count');
   if(!cl){ cl=document.createElement('div'); cl.id='fgb-count'; cl.className='count-line'; list.parentNode.insertBefore(cl, list); }

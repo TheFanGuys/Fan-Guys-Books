@@ -145,6 +145,7 @@ var FGB = (function () {
   function sendToLedger(ledgerJobs) {
     var payload = { _fanguys_bridge: 'invoice->ledger', v: 1, exportedAt: new Date().toISOString(), jobs: ledgerJobs };
     if (!set(MAILBOX, JSON.stringify(payload))) { alert('Could not save the transfer on this phone. Nothing was sent.'); return; }
+    try { sessionStorage.setItem('fgb-burst', '1'); } catch (e) {}
     location.href = 'ledger.html?import=1';
   }
 
@@ -167,7 +168,8 @@ var FGB = (function () {
       var content = JSON.stringify({
         app: 'Fan Guys Books', v: 1, exportedAt: new Date().toISOString(),
         invoice: { jobs: inv.jobs || [], receipts: inv.receipts || [], images: images },
-        ledger: { years: years, customers: json(LED_CUSTS, []), aliases: json(ALIAS, {}) }
+        ledger: { years: years, customers: json(LED_CUSTS, []), aliases: json(ALIAS, {}) },
+        settings: { billTo: json('fgb-billto', null), folders: json('fgb-folders', null), driveUrl: get('fgb-drive-url'), driveKey: get('fgb-drive-key') }
       });
       var name = backupName(), file = null;
       try { file = new File([content], name, { type: 'application/json' }); } catch (e) {}
@@ -245,6 +247,30 @@ var FGB = (function () {
   }
   function isBooksBackup(d) { return !!(d && d.app === 'Fan Guys Books' && (d.invoice || d.ledger)); }
 
+  /* ── The Airflow fan: spins at this month's pace ──
+     pace = this month ÷ your average month. 1 = a normal month. */
+  function fan(opts) {
+    var pace = Math.max(0.15, Math.min(3, opts.pace || 1));
+    var secs = Math.max(1.6, Math.min(16, 7 / pace));
+    var burst = false; try { burst = sessionStorage.getItem('fgb-burst') === '1'; sessionStorage.removeItem('fgb-burst'); } catch (e) {}
+    var blades = '';
+    for (var i = 0; i < 8; i++) blades += '<path d="M104 106 L97 20 Q110 11 123 20 L116 106 Z" transform="rotate(' + (i * 45) + ' 110 110)"/>';
+    var el = document.createElement('section');
+    el.className = 'fgb-hero';
+    el.innerHTML =
+      '<svg class="fgb-air" viewBox="0 0 390 230" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' +
+        '<path d="M60 130 C 50 175, 80 200, 58 230"/><path d="M120 150 C 110 190, 140 210, 116 230"/>' +
+        '<path d="M270 150 C 280 190, 250 210, 274 230"/><path d="M330 130 C 340 175, 310 200, 332 230"/></svg>' +
+      '<svg class="fgb-fan-svg" viewBox="0 0 220 220" role="img" aria-label="Fan spinning at ' + (pace >= 1.15 ? 'a fast' : pace <= 0.85 ? 'a slow' : 'a normal') + ' pace">' +
+        '<g class="fgb-blades' + (burst ? ' burst' : '') + '" style="animation-duration:' + secs.toFixed(2) + 's">' + blades + '</g>' +
+        '<circle cx="110" cy="110" r="24" class="hub"/><circle cx="110" cy="110" r="9" class="cap"/></svg>' +
+      '<div class="fgb-hero-num">' + opts.amount + '</div>' +
+      '<div class="fgb-hero-sub">' + opts.label + '</div>';
+    if (burst) setTimeout(function () { var g = el.querySelector('.fgb-blades'); if (g) g.classList.remove('burst'); }, 1800);
+    return el;
+  }
+  function spinUp() { try { sessionStorage.setItem('fgb-burst', '1'); } catch (e) {} }
+
   /* What kind of backup file is this? Works for all three: Books, old Invoice Pro, old Ledger Pro */
   function detect(d) {
     if (isBooksBackup(d)) return 'books';
@@ -266,6 +292,13 @@ var FGB = (function () {
     if (!confirm('Restore this ' + label + ' backup?\n\nAdds anything missing and updates matching invoice reports.\nNothing is deleted.')) return;
     var invPart = kind === 'books' ? d.invoice : kind === 'invoice' ? d : null;
     var ledPart = kind === 'books' ? d.ledger : null;
+    if (kind === 'books' && d.settings) {   // sending settings: fill in only what this phone doesn't have yet
+      var st = d.settings;
+      if (st.billTo && !get('fgb-billto')) set('fgb-billto', JSON.stringify(st.billTo));
+      if (st.folders && !get('fgb-folders')) set('fgb-folders', JSON.stringify(st.folders));
+      if (st.driveUrl && !get('fgb-drive-url')) set('fgb-drive-url', st.driveUrl);
+      if (st.driveKey && !get('fgb-drive-key')) set('fgb-drive-key', st.driveKey);
+    }
     if (kind === 'ledger') {
       ledPart = Array.isArray(d) ? { years: {} } : d;
       if (Array.isArray(d)) d.forEach(function (j) {
@@ -288,7 +321,7 @@ var FGB = (function () {
     pin: pin, setPin: setPin, isUnlocked: isUnlocked, markUnlocked: markUnlocked,
     sentIds: sentIds, sendToLedger: sendToLedger,
     ledgerIndex: ledgerIndex, inLedger: inLedger, jobNoOf: jobNoOf,
-    matchCustomer: matchCustomer, learnAlias: learnAlias,
+    matchCustomer: matchCustomer, learnAlias: learnAlias, fan: fan, spinUp: spinUp,
     backup: backup, markBackedUp: markBackedUp,
     mergeInvoice: mergeInvoice, mergeLedger: mergeLedger, isBooksBackup: isBooksBackup,
     detect: detect, parseLoose: parseLoose, restoreAny: restoreAny
