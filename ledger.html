@@ -1318,6 +1318,16 @@ function importFromInvoice(){
     // can never share a number. If it's already taken, add a small suffix.
     var desired=(src.jobNo||'').trim();
     var newId;
+    // Already in the Ledger under that job number (typed in before the apps were connected)?
+    // Link it to the report instead of adding a second copy.
+    if(desired){
+      var same=bucket.find(function(j){ return j.id===desired && !j.srcId; });
+      if(same){
+        same.srcId=src.srcId||''; same.srcCustomer=(src.customer||'').trim();
+        if(!safeSet(SK(y), JSON.stringify(bucket))){ saveFailed(); return; }
+        skipped++; return;
+      }
+    }
     if(desired){
       newId=desired; var k=2;
       while(bucket.some(function(j){ return j.id===newId; })){ newId=desired+'-'+k; k++; }
@@ -1485,7 +1495,8 @@ render = function(){
   tBar.style.display='none';
   var cl=document.getElementById('fgb-count');
   if(!cl){ cl=document.createElement('div'); cl.id='fgb-count'; cl.className='count-line'; list.parentNode.insertBefore(cl, list); }
-  cl.innerHTML = jobs.length ? '<span>'+jobs.length+' job'+(jobs.length!==1?'s':'')+' in '+currentYear+'</span><button onclick="toggleExpand()">'+(expandAll?'Collapse all':'Open all')+'</button>' : '';
+  var allN=0; yearRange().forEach(function(y){ allN+=loadJobs(y).length; });
+  cl.innerHTML = jobs.length ? '<span>'+jobs.length+' job'+(jobs.length!==1?'s':'')+' in '+currentYear+(allN>jobs.length?' of '+allN+' total. Pick a year up top.':'')+'</span><button onclick="toggleExpand()">'+(expandAll?'Collapse all':'Open all')+'</button>' : '';
   var nag=document.getElementById('backup-nag');
   if(nag && nag.nextSibling!==cl){ list.parentNode.insertBefore(nag, cl); nag.style.marginBottom='14px'; }
 };

@@ -2697,7 +2697,7 @@ function copyJobToLedger(job, receipts) {
   receipts = receipts || [];
   var b = buildLedgerJob(job, receipts);
   if (!b) { alert('This report has no receipts yet, so there is nothing to send to the Ledger.'); return; }
-  if (FGB.sentIds()[job.id]) { alert('"' + (job.name || 'This report') + '" is already in the Ledger.'); return; }
+  if (FGB.inLedger(job)) { alert('"' + (job.name || 'This report') + '" is already in the Ledger.'); return; }
   function f(n){ return (Math.round(n*100)/100).toFixed(2); }
   if (!confirm('Send "' + (job.name || 'this report') + '" to the Ledger?\n\nInvoice $' + f(b.totals.invoice) +
       '  =  Labor $' + f(b.totals.labor) + '  +  Expenses $' + f(b.totals.expenses))) return;
@@ -2706,9 +2706,9 @@ function copyJobToLedger(job, receipts) {
 
 /* Every report with receipts that isn't in the Ledger yet */
 function unsentReports() {
-  var db = dbGet(), sent = FGB.sentIds(), out = [];
+  var db = dbGet(), idx = FGB.ledgerIndex(), out = [];
   (db.jobs || []).forEach(function(job){
-    if (sent[job.id]) return;
+    if (FGB.inLedger(job, idx)) return;
     var recs = (db.receipts || []).filter(function(r){ return r.jobId === job.id; });
     var b = buildLedgerJob(job, recs);
     if (b) out.push(b);
@@ -2801,7 +2801,7 @@ function openJobMenu(e, job, receipts, onEdit, onDelete) {
   menu.appendChild(menuItem('📤', 'Share / Google Drive', function(){
     shareJobReport(job, receipts);
   }));
-  if (FGB.sentIds()[job.id]) {
+  if (FGB.inLedger(job)) {
     menu.appendChild(menuItem('✅', 'In Ledger — View', function(){ location.href='ledger.html'; }));
   } else {
     menu.appendChild(menuItem('📒', 'Send to Ledger', function(){ copyJobToLedger(job, receipts); }));
@@ -2837,6 +2837,13 @@ function renderJobList() {
     var jobs=search
       ?db.jobs.filter(function(j){ var q=search.toLowerCase(); return j.name.toLowerCase().indexOf(q)>-1||(j.location||'').toLowerCase().indexOf(q)>-1; })
       :db.jobs;
+    // Job number order, newest first ("2026-41" above "2026-40"). Reports without a number stay on top.
+    function jobKey(j){ var no=FGB.jobNoOf(j.name); if(!no) return null; var m=no.match(/^(\d{4})-?(\d+)$/); return m ? (+m[1])*100000+(+m[2]) : parseFloat(no.replace(/[^0-9.]/g,''))||0; }
+    jobs=jobs.map(function(j,i){ return {j:j,i:i,k:jobKey(j)}; }).sort(function(a,b){
+      if(a.k===null&&b.k===null) return a.i-b.i;
+      if(a.k===null) return -1; if(b.k===null) return 1;
+      return b.k-a.k || a.i-b.i;
+    }).map(function(x){ return x.j; });
 
     var screen=div({className:'screen'});
 
@@ -2884,14 +2891,14 @@ function renderJobList() {
       list.appendChild(empty);
     }
 
-    var sentMap=FGB.sentIds();
+    var ledIdx=FGB.ledgerIndex();
     jobs.forEach(function(job){
       var recs=db.receipts.filter(function(r){return r.jobId===job.id;});
       var tot=recs.reduce(function(s,r){return s+r.amount;},0);
       var dates=recs.map(function(r){return r.date;}).sort();
       var dr=dates.length?fmtD(dates[0])+' → '+fmtD(dates[dates.length-1]):(job.startDate?fmtD(job.startDate)+(job.endDate?' → '+fmtD(job.endDate):''):null);
 
-      var inLedger=!!sentMap[job.id];
+      var inLedger=FGB.inLedger(job, ledIdx);
       var card=div({className:'strip rep-strip'+(inLedger?' sent':'')});
       var handle=div({className:'handle'});
       handle.appendChild(document.createElement('b')).textContent = inLedger ? '\u2713' : '';

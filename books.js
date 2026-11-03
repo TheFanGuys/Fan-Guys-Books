@@ -78,6 +78,27 @@ var FGB = (function () {
     Object.keys(ys).forEach(function (y) { ys[y].forEach(function (j) { if (j && j.srcId) s[j.srcId] = 1; }); });
     return s;
   }
+  /* A report's job number, from a name like "2026-30 Wesco Phoenix" */
+  function jobNoOf(name) {
+    var m = String(name || '').trim().match(/^([0-9][0-9\-\/.]*[0-9]|[0-9]+)\s+(.+)$/);
+    return m ? m[1] : '';
+  }
+  /* Is this report in the Ledger? Linked by id, or a ledger job with the same job number
+     (jobs you typed into the Ledger yourself before the two apps were connected). */
+  function ledgerIndex() {
+    var idx = { src: {}, ids: {} }, ys = ledgerYears();
+    Object.keys(ys).forEach(function (y) { ys[y].forEach(function (j) {
+      if (!j) return; if (j.srcId) idx.src[j.srcId] = 1; if (j.id) idx.ids[String(j.id)] = 1;
+    }); });
+    return idx;
+  }
+  function inLedger(job, idx) {
+    idx = idx || ledgerIndex();
+    if (!job) return false;
+    if (idx.src[job.id]) return true;
+    var no = jobNoOf(job.name);
+    return !!(no && idx.ids[no]);
+  }
 
   /* ── Smart customer matching ──
      "2026-30 Wesco Phoenix" → Wesco. Learns from your corrections:
@@ -266,6 +287,7 @@ var FGB = (function () {
   return {
     pin: pin, setPin: setPin, isUnlocked: isUnlocked, markUnlocked: markUnlocked,
     sentIds: sentIds, sendToLedger: sendToLedger,
+    ledgerIndex: ledgerIndex, inLedger: inLedger, jobNoOf: jobNoOf,
     matchCustomer: matchCustomer, learnAlias: learnAlias,
     backup: backup, markBackedUp: markBackedUp,
     mergeInvoice: mergeInvoice, mergeLedger: mergeLedger, isBooksBackup: isBooksBackup,
