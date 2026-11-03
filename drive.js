@@ -125,13 +125,23 @@ var FGBDrive = (function () {
   }
 
   /* ── bill-to contacts ── */
-  var DEFAULT_MSG = 'Hi,\n\nHere is the invoice and the job photos for {job}:\n{link}\n\nInvoice total: {total}\n\nThanks,\nFan Guys';
+  var DEFAULT_MSG = 'Hi,\n\nHere is the invoice and the job photos for {job}:\n{link}\n\nThanks,\nFan Guys';
   function billTo() {
     var list = json(K_BILL, null);
     if (!Array.isArray(list) || !list.length) {
       list = [{ id: 'gfy', name: 'Vivid Air (GFY)', folder: 'Go Fan Yourself', to: '', cc: '', subject: 'Invoice {job}', message: DEFAULT_MSG }];
     }
-    list.forEach(function (c) { if (c.folder === undefined) c.folder = c.id === 'gfy' ? 'Go Fan Yourself' : ''; });
+    var changed = false;
+    list.forEach(function (c) {
+      if (c.folder === undefined) { c.folder = c.id === 'gfy' ? 'Go Fan Yourself' : ''; changed = true; }
+      // No dollar amounts in the email: drop the total line from older saved messages
+      if (!c.noTotal) {
+        c.message = String(c.message || '').replace(/\n*[^\n]*\{total\}[^\n]*/g, '');
+        c.subject = String(c.subject || '').replace(/\s*[-—,:]?\s*\{total\}/g, '');
+        c.noTotal = true; changed = true;
+      }
+    });
+    if (changed && get(K_BILL)) saveBillTo(list);
     return list;
   }
   function saveBillTo(list) { set(K_BILL, JSON.stringify(list)); }
@@ -223,7 +233,7 @@ var FGBDrive = (function () {
             '<label>Copy to (optional)<input data-f="cc" type="email" multiple inputmode="email" value="' + esc(c.cc) + '"></label>' +
             '<label>Subject<input data-f="subject" value="' + esc(c.subject) + '"></label>' +
             '<label>Message<textarea data-f="message" rows="6">' + esc(c.message) + '</textarea></label>' +
-            '<p class="fgb-hint">{job} becomes the report name, {link} the job folder link, {total} the invoice total.</p>' +
+            '<p class="fgb-hint">{job} becomes the report name and {link} the job folder link.</p>' +
             (list.length > 1 ? '<button class="fgb-remove" data-i="' + i + '">Remove ' + esc(c.name) + '</button>' : '') +
             '</fieldset>';
         }).join('') +
@@ -239,7 +249,7 @@ var FGBDrive = (function () {
     draw();
     s.el.addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
-      if (b.classList.contains('fgb-add')) { readForm(); list.push({ id: 'c' + Date.now(), name: 'Other company', folder: '', to: '', cc: '', subject: 'Invoice {job}', message: DEFAULT_MSG }); draw(); }
+      if (b.classList.contains('fgb-add')) { readForm(); list.push({ id: 'c' + Date.now(), noTotal: true, name: 'Other company', folder: '', to: '', cc: '', subject: 'Invoice {job}', message: DEFAULT_MSG }); draw(); }
       else if (b.classList.contains('fgb-remove')) { readForm(); list.splice(+b.getAttribute('data-i'), 1); draw(); }
       else if (b.classList.contains('fgb-save')) { readForm(); saveBillTo(list); s.close(); if (onDone) onDone(); }
       else if (b.classList.contains('fgb-cancel')) s.close();
