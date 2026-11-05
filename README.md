@@ -16,10 +16,12 @@ Invoice Pro and Ledger Pro in one app, in the Airflow look: the fan at the top s
 
 ## Emailing an invoice
 
-On a report, tap ⋮ → **Email Invoice**. The app makes the PDF, saves it into the job's Google Drive folder, and opens your mail app (Spark, if it's your default) with the Bill-to people, the subject and the folder link filled in.
+On a report, tap ⋮ → **Email Invoice**. The app makes the PDF, saves it into the job's Google Drive folder, and opens your mail app (Spark, if it's your default) with the Bill-to people, the subject and the folder link filled in. The invoice total is never put in the email.
+
+- **Email several:** on the Invoices list, tap **Email several**, pick the reports, and send them all in one email with a link to each job folder.
 
 - **Bill to:** More → Bill to. Vivid Air (GFY) is the default; add another company if you need it. Emails are saved on your phone only.
-- **Job folders:** Drive → your year folder (like 2027) → one folder per report. The app makes the job folder when you start a report, or uses one you made with the exact same name. ⋮ → **Open Job Folder** to add jobsite photos.
+- **Job folders:** Drive → the company's folder (Go Fan Yourself for Vivid Air) → year folder (like 2026) → one folder per report. Make next year's folder (like 2027) yourself when the year starts. The app makes the job folder when you start a report, or uses one you made with the exact same name. ⋮ → **Open Job Folder** to add jobsite photos.
 - **Google Drive setup (one time):** More → Connect Google Drive and follow the five steps. A small script in your own Google account does the saving; the app never signs in to Google and nobody else gets access.
 
 ## Moving in from the old apps
