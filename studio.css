@@ -1,0 +1,196 @@
+/* Fan Guys Books / Studio system. Loaded after the retained compatibility layer.
+   Financial logic and storage keys are deliberately independent of presentation. */
+:root {
+ --air:#f7f8fa;--card:#fff;--soft:#f2f4f7;--line:#e2e6ec;--line2:#c7ced8;
+ --ink:#182230;--ink2:#526071;--ink3:#657386;--teal:#245be0;--teal-ink:#234fc0;
+ --teal-soft:#eaf0ff;--breeze:#dbe5fa;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+ --studio-radius:12px;--studio-accent:#245be0;--studio-shadow:0 12px 40px #18223014;
+}
+body.fgb {font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body.fgb button,body.fgb a,body.fgb input,body.fgb select,body.fgb textarea {touch-action:manipulation}
+body.fgb button {transition:background-color 140ms ease,border-color 140ms ease,box-shadow 140ms ease}
+body.fgb button:disabled{cursor:not-allowed;opacity:.55}
+body.fgb :focus-visible{outline:3px solid var(--studio-accent);outline-offset:3px}
+body.fgb input:focus-visible,body.fgb textarea:focus-visible,body.fgb select:focus-visible{outline:2px solid var(--studio-accent);outline-offset:2px}
+body.fgb .searchbar:focus-within{border-color:var(--studio-accent);box-shadow:0 0 0 3px #245be014}
+.studio-rail {display:none}
+.studio-primary,.fgb-invoices .reports-screen>.navbar>.nav-btn {background:var(--studio-accent)!important;color:white!important;border:1px solid var(--studio-accent);border-radius:9px;min-height:44px;padding:10px 16px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;cursor:pointer}
+.fgb-invoices .reports-screen>.navbar>.nav-btn svg *{stroke:white}
+.fgb-invoices .primary-label{color:white!important}
+.fgb-invoices .fgb-brand,.fgb-ledger nav .brand-name {font-size:17px;font-weight:650;letter-spacing:-.4px}
+.fgb-invoices .navbar{background:var(--card);min-height:68px;flex-shrink:0;padding:0 20px}
+.fgb-invoices .fgb-title{font-size:30px;line-height:1.15;letter-spacing:-1px;font-weight:650;margin:0}
+.workspace-description{font-size:14px;color:var(--ink2);margin:9px 0 4px;line-height:1.5}
+.fgb-invoices .reports-screen>.navbar+div{padding:28px 20px 8px!important}
+.fgb-invoices .searchbar{border-radius:9px;min-height:44px;box-sizing:border-box;margin:14px 20px 18px;padding:9px 13px;background:white}
+.fgb-invoices .searchbar input{min-width:0}
+.fgb-invoices .reports-screen>.scroll{padding:0 20px 28px!important}
+.fgb-invoices .fgb-tools{padding:0 20px 16px}
+.strip {border:1px solid var(--line);border-radius:var(--studio-radius);box-shadow:0 1px 2px #18223004;margin-bottom:10px}
+.strip .sbody{padding:18px 18px 17px}
+.strip .cust {font-size:16px;font-weight:600;letter-spacing:-.25px;overflow-wrap:anywhere}
+.strip .amt{font-size:20px;letter-spacing:-.6px;font-weight:650}
+.strip .jobno{font-size:11px;letter-spacing:.7px;color:var(--ink3);font-weight:600;margin-bottom:6px}
+.strip .where{margin-top:5px;font-size:13px;line-height:1.6}
+.strip .wires{margin-top:13px;gap:8px}
+.strip .wire{background:transparent;padding:0 9px 0 0;font-size:12px}
+.strip .status-row{border-top:1px solid var(--line);padding-top:12px;margin-top:14px;min-height:32px}
+.strip .status-row:empty{display:none}
+.strip [aria-label^="Actions"]{min-width:44px;min-height:44px}
+.pill-in,.pill-mail{font-size:11px;letter-spacing:.1px;border-radius:5px;padding:4px 8px}
+.pill-in{background:#eaf5ef;color:#236347}
+.pill-send{min-height:44px;border-radius:7px;background:var(--teal-soft);color:var(--teal-ink)!important;padding:9px 12px;font-size:12px}
+.fgb-hero {display:grid;grid-template-columns:1fr 76px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;margin:0 0 24px;padding:22px 24px;overflow:hidden;min-height:120px;box-sizing:border-box}
+.fgb-air{display:none}
+.fgb-fan-svg{grid-column:2;grid-row:1 / span 3;width:72px;height:72px;align-self:center}
+.fgb-fan-svg .fgb-blades{fill:var(--teal)}
+.fgb-fan-svg .hub{fill:var(--ink)}
+.fgb-fan-svg .cap{fill:#fff}
+.fgb-hero::before{content:'FINANCIAL OVERVIEW';font-size:10px;letter-spacing:1.6px;font-weight:700;color:var(--ink3);grid-column:1;display:block;margin-bottom:9px}
+.fgb-hero-num{grid-column:1;grid-row:2;font-size:36px;letter-spacing:-1.4px;font-weight:650;line-height:1.1;margin:0;font-variant-numeric:tabular-nums}
+.fgb-hero-sub{grid-column:1;grid-row:3;padding:0;margin-top:7px;font-size:13px;max-width:38ch}
+.fgb-blades{animation-play-state:running}
+.fgb-invoices .empty,.fgb-ledger .empty {min-height:290px;height:auto!important;padding:42px 24px;background:white;border:1px solid var(--line);border-radius:12px;box-sizing:border-box;gap:8px;text-align:center}
+.fgb-invoices .empty img,.fgb-ledger .empty img {display:none!important}
+.fgb-invoices .empty>div:first-of-type {font-size:22px!important;font-weight:600!important;letter-spacing:-.6px;color:var(--ink)!important;margin-top:0!important}
+.fgb-invoices .empty>div:nth-of-type(2){max-width:36ch;line-height:1.6;font-size:14px!important;color:var(--ink2)!important}
+.fgb-invoices .empty .studio-primary{margin-top:18px}
+.fgb-ledger .empty-title{font-size:22px;letter-spacing:-.5px;font-weight:600;text-transform:none}
+.fgb-ledger .empty-sub{font-size:14px;line-height:1.6;margin:8px 0 24px}
+.studio-no-results {padding:48px 24px;text-align:center;border:1px solid var(--line);border-radius:12px;background:white;color:var(--ink2)}
+.fgb-invoices .tabbar{background:white;min-height:66px;height:calc(66px + env(safe-area-inset-bottom));padding-top:4px}
+.fgb-invoices .tab-btn{min-height:48px;font-size:11px;gap:5px}
+.fgb-invoices .tab-center{width:48px;height:48px;top:7px;background:var(--studio-accent);box-shadow:none;border-radius:12px}
+.fgb-invoices .tab-center:active{background:#1747bc}
+.fgb-invoices .tab-btn:first-child{color:var(--studio-accent)}
+.fgb-invoices .tab-btn:first-child svg *{stroke:var(--studio-accent)}
+.fgb-invoices .sheet-card,.fgb-sheet-card{border-radius:18px 18px 0 0;box-shadow:var(--studio-shadow);animation:studio-enter 200ms cubic-bezier(.2,.8,.2,1)}
+.fgb-invoices .sheet-nav{padding:8px 16px;min-height:56px;background:white}
+.fgb-invoices .sheet-nav button{min-width:56px;min-height:44px;font-size:14px}
+.fgb-invoices .field-group,.fgb-ledger .sec{border:1px solid var(--line);border-radius:10px;overflow:visible}
+.fgb-invoices .field-row{padding-top:14px;padding-bottom:14px}
+.fgb-invoices .field-input{font-size:16px}
+.fgb-invoices .sheet-card .field-label,.fgb-ledger .field label{font-size:12px;font-weight:600;color:var(--ink2)}
+.fgb-ledger nav{padding:14px 20px 0!important;background:white!important;position:sticky;top:0;z-index:100}
+.fgb-ledger nav .tabs{gap:24px}
+.fgb-ledger nav .tab{font-size:14px!important;min-height:44px}
+.fgb-ledger nav .tab.active{color:var(--studio-accent);border-bottom-color:var(--studio-accent)}
+.fgb-ledger #tools-btn,.fgb-ledger #year-sel{min-height:44px;border-radius:8px;font-size:14px!important}
+.fgb-ledger main{max-width:1060px;padding:24px 20px 110px;margin:auto}
+.fgb-ledger .fab-newjob{background:var(--studio-accent);border-radius:10px;box-shadow:0 4px 12px #245be020;min-height:48px;font-size:14px}
+.fgb-ledger .kpi-grid{gap:12px}
+.fgb-ledger .kpi-card{border:1px solid var(--line);border-radius:12px;box-shadow:none;padding:22px}
+.fgb-ledger .kpi-val,.fgb-ledger .kpi-val.accent{font-size:30px;font-weight:650;letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.25}
+.fgb-ledger .kpi-lbl{font-size:12px;margin-top:8px;color:var(--ink2)}
+.fgb-ledger .card{border:1px solid var(--line);border-radius:12px;box-shadow:none;overflow:hidden}
+.fgb-ledger .card-hdr{font-size:14px;font-weight:600;padding:18px 20px}
+.fgb-ledger .sum-table td,.fgb-ledger .month-table td{font-size:13px;padding:14px 16px;font-variant-numeric:tabular-nums}
+.fgb-ledger .sum-table th,.fgb-ledger .month-table th{font-size:11px;background:var(--soft);padding:12px 16px}
+.fgb-ledger .exp-grid{gap:10px;padding:16px}
+.fgb-ledger .exp-tile{border-top-width:2px;border-radius:7px;padding:14px 12px}
+.fgb-ledger .modal{border-radius:16px;box-shadow:var(--studio-shadow)}
+.fgb-ledger .modal-hdr{padding:20px 24px}
+.fgb-ledger .modal-body{padding:20px}
+.fgb-ledger .field input,.fgb-ledger .field select,.fgb-ledger .field textarea{min-height:46px;border-radius:8px}
+.fgb-ledger .btn-blue{background:var(--studio-accent);min-height:44px;border-radius:9px}
+.fgb-ledger .row-actions button{min-height:44px;border-radius:7px!important}
+.fgb-ledger .count-line{font-size:13px;margin:0 0 14px}
+.fgb-ledger .count-line button{min-height:44px;border-radius:8px}
+body.fgb .caution-bar{font-weight:500!important;font-size:13px!important;background:#fff8e8!important;border:1px solid #eadab3!important;border-radius:9px!important;min-height:44px;box-sizing:border-box}
+body.fgb .pin-screen,body.fgb #lock-screen{background:#f7f8fa}
+.fgb-invoices .pin-title,.fgb-ledger .lock-title{font-family:var(--font);font-weight:650;letter-spacing:-.8px;font-size:28px}
+.fgb-invoices .pin-key,.fgb-ledger .keypad-btn{border-radius:16px;box-shadow:none;border:1px solid var(--line);font-size:24px}
+.fgb-invoices .pin-key.empty,.fgb-invoices .pin-key.del{border:0}
+.studio-ledger-mobile{display:none}
+@keyframes studio-enter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media(hover:hover){
+ .strip:hover{border-color:#b9c8e7;box-shadow:0 3px 12px #18223008}
+ .studio-primary:hover,.fgb-invoices .reports-screen>.navbar>.nav-btn:hover{background:#194cc8!important}
+ .studio-nav-link:hover{background:#edf0f5}
+ .fgb-ledger .sum-table tbody tr:hover{background:#f7f9fc!important}
+}
+@media(min-width:900px){
+ body.fgb{padding-left:224px}
+ .studio-rail{position:fixed;display:flex;flex-direction:column;inset:0 auto 0 0;width:224px;background:#fff;border-right:1px solid var(--line);z-index:150;padding:28px 16px 20px;box-sizing:border-box}
+ .studio-logo{display:flex;align-items:center;gap:10px;padding:0 12px 26px;color:var(--ink);font-weight:700;font-size:17px;letter-spacing:-.4px}
+ .studio-logo img{width:32px;height:32px;object-fit:contain}
+ .studio-logo small{display:block;font-weight:400;font-size:11px;color:var(--ink3);letter-spacing:.1px;margin-top:1px}
+ .studio-nav-heading{font-size:10px;letter-spacing:1.5px;font-weight:600;color:var(--ink3);padding:10px 14px}
+ .studio-nav-link{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 14px;margin:3px 0;border:0;border-radius:8px;background:transparent;text-decoration:none;color:var(--ink2);font-size:14px;font-weight:500;text-align:left;width:100%;box-sizing:border-box;cursor:pointer}
+ .studio-nav-link.active{background:var(--teal-soft);color:var(--teal-ink);font-weight:600}
+ .studio-nav-link svg{width:18px;height:18px;flex:none}
+ .studio-rail-bottom{margin-top:auto;border-top:1px solid var(--line);padding-top:15px}
+ .studio-local-note{font-size:11px;line-height:1.6;color:var(--ink3);padding:14px}
+ .fgb-invoices .screen{max-width:1060px;width:100%;height:100dvh;margin:auto}
+ .fgb-invoices .navbar{background:transparent;border-bottom:1px solid var(--line);height:82px;padding:0 36px}
+ .fgb-invoices .reports-screen>.navbar+div{padding:34px 36px 8px!important}
+ .fgb-invoices .searchbar{margin:14px 36px 22px;max-width:460px}
+ .fgb-invoices .reports-screen>.scroll{padding:0 36px 32px!important}
+ .fgb-invoices .fgb-tools{padding:0 36px 14px}
+ .fgb-invoices .tabbar{display:none}
+ .fgb-invoices .sheet-overlay{align-items:center;justify-content:center}
+ .fgb-invoices .sheet-card{max-width:580px;border-radius:16px;max-height:88dvh}
+ .fgb-sheet{align-items:center}
+ .fgb-sheet-card{border-radius:16px;max-width:520px}
+ .fgb-invoices .fgb-title{font-size:36px}
+ .fgb-ledger nav{height:82px;max-width:1060px;margin:auto;padding:18px 36px!important;flex-wrap:nowrap;box-sizing:border-box}
+ .fgb-ledger nav .brand{display:none!important}
+ .fgb-ledger nav .tabs{order:1;flex:1;margin:0;gap:24px}
+ .fgb-ledger nav .nav-right{order:2}
+ .fgb-ledger main{padding:32px 36px 100px}
+ .fgb-ledger .kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .fgb-ledger .fab-newjob{right:36px;bottom:28px}
+ .fgb-ledger .overlay{align-items:center}
+ .fgb-hero{min-height:140px;padding:24px 28px}
+ .fgb-hero-num{font-size:40px}
+}
+@media(max-width:599px){
+ .fgb-invoices .primary-label{display:none}
+ .fgb-invoices .reports-screen>.navbar>.nav-btn{width:44px;padding:10px}
+ .fgb-invoices .fgb-title{font-size:28px}
+ .workspace-description{font-size:13px;max-width:34ch}
+ .strip .sbody{padding:15px 12px 15px 16px}
+ .strip .amt{font-size:18px}
+ .strip .l1{gap:8px}
+ .fgb-invoices .searchbar{margin-bottom:16px}
+ .fgb-hero{padding:20px;grid-template-columns:1fr 60px}
+ .fgb-hero-num{font-size:32px}
+ .fgb-fan-svg{width:58px;height:58px}
+ .fgb-ledger main{padding-left:16px;padding-right:16px}
+ .fgb-ledger .kpi-val{font-size:26px}
+ .fgb-ledger .kpi-card{padding:18px 14px}
+ .fgb-ledger .exp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .fgb-ledger .fab-newjob{bottom:calc(82px + env(safe-area-inset-bottom));right:16px}
+ .fgb-ledger .tabs{display:none}
+ .fgb-ledger main{padding-bottom:calc(160px + env(safe-area-inset-bottom))!important}
+ .studio-ledger-mobile{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:120;background:white;border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom));gap:4px}
+ .studio-ledger-mobile a,.studio-ledger-mobile button{flex:1;min-height:50px;text-decoration:none;color:var(--ink2);font-family:var(--font);font-size:12px;font-weight:500;border:0;background:none;border-radius:8px;display:grid;place-items:center}
+ .studio-ledger-mobile .active{color:var(--teal-ink);background:var(--teal-soft)}
+ .studio-ledger-mobile a,.studio-ledger-mobile button{display:flex!important;align-items:center;justify-content:center;gap:5px}
+ .studio-count:empty{display:none}
+ .studio-count{font-size:11px;font-weight:600;min-width:18px;padding:1px 5px;border-radius:9px;background:var(--line);color:var(--ink2)}
+}
+@media(prefers-reduced-motion:reduce){body.fgb *,body.fgb *::before,body.fgb *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}}
+@media print{.studio-rail,.studio-ledger-mobile{display:none!important}body.fgb{padding:0!important}}
+.fgb-invoices .receipts-screen>.navbar+div{padding:28px 20px 8px!important;gap:14px;flex-wrap:wrap;align-items:center!important}
+.fgb-invoices .receipts-screen>.scroll{padding:0 20px 28px!important}
+.fgb-invoices .receipts-screen>.navbar .nav-btn{min-height:44px;min-width:44px;font-size:14px}
+.fgb-invoices .receipts-screen>.navbar+div .fgb-title-amt{margin-left:auto}
+.fgb-invoices .receipts-screen .empty>svg{display:none}
+.fgb-invoices .receipts-screen .empty .studio-primary{margin-top:16px}
+@media(min-width:900px){
+ .fgb-invoices .receipts-screen>.navbar+div{padding:34px 36px 8px!important}
+ .fgb-invoices .receipts-screen>.scroll{padding:0 36px 28px!important}
+ .fgb-invoices .receipts-screen>.navbar>div>div:first-child{max-width:400px!important}
+}
+/* Keep dismissal and save controls reachable even when the form exceeds the viewport. */
+.fgb-ledger .overlay{box-sizing:border-box}
+.fgb-ledger .modal{display:flex;flex-direction:column;max-height:calc(100dvh - 28px)}
+.fgb-ledger .modal-hdr{flex-shrink:0;min-height:72px;box-sizing:border-box}
+.fgb-ledger .modal-hdr button{min-height:44px}
+.fgb-ledger .modal-body{overflow:auto;min-height:0;overscroll-behavior:contain}
+.fgb-invoices .receipts-screen>.navbar>button:first-child{background:transparent!important;color:var(--teal-ink)!important}
+@media(min-width:900px){.fgb-ledger .modal{max-height:90dvh}}
+/* Scope legacy Ledger navigation rules away from the shared sidebar. */
+body.fgb .studio-rail nav{position:static;display:block;inset:auto;width:auto;height:auto;max-width:none;margin:0;padding:0!important;background:transparent!important;border:0;box-shadow:none;flex:none;backdrop-filter:none}
+body.fgb .studio-ledger-mobile{max-width:none;margin:0;height:auto;box-sizing:border-box;backdrop-filter:none}

@@ -1,6 +1,8 @@
 # Fan Guys Books
 
-Invoice Pro and Ledger Pro in one app, in the Airflow look: the fan at the top spins at this month's pace. Both sides share one storage on your phone, so a finished invoice report goes into the Ledger with one tap. No copying, no pasting.
+> The redesigned version (V2) is now the live app. The previous version is saved on the `v1-backup` branch.
+
+Invoice Pro and Ledger Pro in one app: the fan at the top spins at this month's pace. Both sides share one storage on your phone, so a finished invoice report goes into the Ledger with one tap. No copying, no pasting.
 
 **Open it:** https://thefanguys.github.io/Fan-Guys-Books/
 
@@ -45,3 +47,7 @@ No business data is stored in this repo or in the code. Everything lives on your
 - `airflow.css` and `fonts/` are the look
 
 No build step. Hosted on GitHub Pages.
+
+## Studio redesign (November 2026)
+
+See `DESIGN-AUDIT.md` for the audit, implementation details, validation, and release notes. This remains a buildless app. Added `studio.css` and `studio.js`; app scripts and the existing PDF vendor bundle now load from separate files. Keep the `assets/` folder with the HTML files. Run `node checks/verify.cjs` for the included smoke checks.
