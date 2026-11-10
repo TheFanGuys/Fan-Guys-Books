@@ -141,9 +141,17 @@ function idbOpen(){
   });
 }
 function idbPutImg(id, url){
-  return idbOpen().then(function(db){ if(!db) return; return new Promise(function(res){
-    try{ var tx=db.transaction('imgs','readwrite'); tx.objectStore('imgs').put(url,id); tx.oncomplete=res; tx.onerror=res; }catch(e){res();}
-  });});
+  return idbOpen().then(function(db){
+    if(!db) return false;
+    return new Promise(function(resolve){
+      try {
+        var tx=db.transaction('imgs','readwrite');
+        tx.objectStore('imgs').put(url,id);
+        tx.oncomplete=function(){resolve(true);};
+        tx.onerror=tx.onabort=function(){resolve(false);};
+      } catch(e) { resolve(false); }
+    });
+  });
 }
 function idbDelImg(id){
   return idbOpen().then(function(db){ if(!db) return; return new Promise(function(res){
@@ -365,44 +373,51 @@ function parseReceiptText(lines) {
     }
   }
 
-  // ── AMOUNT: handles regular receipts AND hotel folios (payment shown in parentheses)
-  var totalAmount = 0, largestPos = 0, largestCredit = 0;
-  for (var ai=0; ai<lines.length; ai++) {
-    var al = lines[ai];
-    // Positive dollar amounts
-    var posM = al.match(/[^(]\$?(\d{1,5}\.\d{2})/g);
-    if (posM) {
-      posM.forEach(function(a) {
-        var v = parseFloat(a.replace(/[$,]/g,''));
-        if (!isNaN(v) && v > 1) {
-          if (v > largestPos) largestPos = v;
-          if (/(rate|charged|total charge|total amount|total due|total paid|folio total)/i.test(al) && v > totalAmount) {
-            totalAmount = v;
-          }
-        }
-      });
+  // Final charges win over subtotal, cash tendered, tax and hotel balance due.
+  var printedTotal = null, paid = null, folioPayment = null, amountDue = null;
+  var moneyPattern = /(?:^|[^\d.,])(-?\$?\s*(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})(?![\d.])/g;
+  function lastAmount(line) {
+    var match, value = null;
+    moneyPattern.lastIndex = 0;
+    while ((match = moneyPattern.exec(line))) {
+      value = Number(match[1].replace(/[$,\s]/g,''));
     }
-    // Credit amounts in parens: ($872.57) — hotel payment to card
-    var credM = al.match(/\(\$?([\d,]+\.\d{2})\)/g);
-    if (credM) {
-      credM.forEach(function(a) {
-        var v = parseFloat(a.replace(/[()$,]/g,''));
-        if (!isNaN(v) && v > largestCredit) largestCredit = v;
-      });
-    }
+    return value;
   }
-  result.amount = totalAmount > 0 ? totalAmount : (largestCredit > largestPos ? largestCredit : largestPos);
+  lines.forEach(function(line, i) {
+    var label = line.trim();
+    if (/\bsub[\s-]*total\b|\b(total\s+(tax|savings|discount|items|points)|change|cash tendered)\b/i.test(label)) return;
+    var kind = /^(?:[^a-z0-9]*)(?:grand\s+total|folio\s+total|total(?:\s+(?:amount|charges?|sale|usd))?)(?:\s*[:$\d]|$)/i.test(label) ? 'total'
+      : /\b(?:amount paid|total paid|total charged|amount charged|payment received)\b/i.test(label) ? 'paid'
+      : /\b(?:balance due|amount due|total due)\b/i.test(label) ? 'due'
+      : /\b(?:payment|visa|mastercard|amex|discover|credit card)\b/i.test(label) && /\(\s*\$?[\d,]+\.\d{2}\s*\)/.test(label) ? 'folio' : '';
+    if (/\btotal\s+(?:due|paid|charged)\b/i.test(label)) {
+      kind = /\bdue\b/i.test(label) ? 'due' : 'paid';
+    }
+    if (!kind) return;
+    var amount = lastAmount(label);
+    if (amount === null && /^\s*\$?\s*[\d,]+\.\d{2}\s*$/.test(lines[i+1]||'')) amount = lastAmount(lines[i+1]);
+    if (amount === null || amount < 0) return;
+    if (kind==='total') printedTotal=amount;
+    if (kind==='paid') paid=amount;
+    if (kind==='folio') folioPayment=amount;
+    if (kind==='due') amountDue=amount;
+  });
+  result.amount = printedTotal > 0 ? printedTotal : paid > 0 ? paid
+    : folioPayment > 0 ? folioPayment : amountDue > 0 ? amountDue
+    : printedTotal === 0 || paid === 0 || amountDue === 0 ? 0 : null;
 
   // ── DATE: MM/DD/YY, MM/DD/YYYY, YYYY-MM-DD, Month DD YYYY
   var mos = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
   for (var di=0; di<lines.length; di++) {
     var dl = lines[di], dm;
-    dm = dl.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (dm) { result.date = dm[3]+'-'+dm[1].padStart(2,'0')+'-'+dm[2].padStart(2,'0'); break; }
-    dm = dl.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/);
-    if (dm) { var yr=parseInt(dm[3]); result.date=(yr<=50?'20':'19')+(yr<10?'0'+yr:''+yr)+'-'+dm[1].padStart(2,'0')+'-'+dm[2].padStart(2,'0'); break; }
-    dm = dl.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    dm = dl.match(/\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b/);
     if (dm) { result.date = dm[1]+'-'+dm[2].padStart(2,'0')+'-'+dm[3].padStart(2,'0'); break; }
+    dm = dl.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4}|\d{2})\b/);
+    if (dm) {
+      var year = dm[3].length===2 ? (+dm[3]<=50?'20':'19')+dm[3] : dm[3];
+      result.date = year+'-'+dm[1].padStart(2,'0')+'-'+dm[2].padStart(2,'0'); break;
+    }
     dm = dl.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/i);
     if (dm) { result.date = dm[3]+'-'+(mos[dm[1].slice(0,3).toLowerCase()]||'01')+'-'+dm[2].padStart(2,'0'); break; }
   }
@@ -422,10 +437,10 @@ function geminiModelOrder(){
   return GEMINI_MODELS.slice();
 }
 
-function scanReceipt(b64url) {
+function scanReceiptWithGemini(b64url) {
   var KEY = localStorage.getItem('fg-gemini-key')||'';
   var base64 = b64url.replace(/^data:image\/\w+;base64,/,'');
-  var blank = { vendor:'', amount:0, date:today(), category:'' };
+  var blank = { vendor:'', amount:null, date:'', category:'' };
 
   if (!KEY) return Promise.resolve(blank);
 
@@ -476,7 +491,7 @@ function scanReceipt(b64url) {
   return tryModel(0);
 }
 
-function showCropTool(dataUrl, onCrop, onSkip) {
+function showCropTool(dataUrl, onCrop, onSkip, onError) {
   var overlay = div({className:'crop-overlay'});
 
   // Header
@@ -514,8 +529,8 @@ function showCropTool(dataUrl, onCrop, onSkip) {
     canvas.height = ch;
     var ctx = canvas.getContext('2d');
 
-    // Crop rect (in canvas px) — start at 10% inset
-    var pad = Math.min(cw, ch) * 0.08;
+    // Start with the full receipt so the vendor and total stay visible.
+    var pad = 0;
     var crop = { x: pad, y: pad, w: cw - pad*2, h: ch - pad*2 };
 
     function drawAll() {
@@ -648,6 +663,7 @@ function showCropTool(dataUrl, onCrop, onSkip) {
       onSkip(dataUrl);
     });
   };
+  img2.onerror = function(){ overlay.remove(); if(onError) onError(); };
   img2.src = dataUrl;
 }
 
@@ -655,10 +671,11 @@ function showCropTool(dataUrl, onCrop, onSkip) {
    IMAGE PREP (resize + crop white borders)
 ═══════════════════════════════════════════════════ */
 function prepImage(dataUrl) {
-  return new Promise(function(resolve){
+  return new Promise(function(resolve,reject){
     var img2=new Image();
     img2.onload=function(){
-      var MAX=1100, sc=Math.min(1,MAX/Math.max(img2.width,img2.height));
+      try {
+      var MAX=1800, sc=Math.min(1,MAX/Math.max(img2.width,img2.height));
       var W=Math.round(img2.width*sc), H=Math.round(img2.height*sc);
       var c=document.createElement('canvas'); c.width=W; c.height=H;
       var ctx=c.getContext('2d'); ctx.drawImage(img2,0,0,W,H);
@@ -674,9 +691,10 @@ function prepImage(dataUrl) {
       var p=12; x0=Math.max(0,x0-p); y0=Math.max(0,y0-p); x1=Math.min(W,x1+p); y1=Math.min(H,y1+p);
       var o=document.createElement('canvas'); o.width=x1-x0; o.height=y1-y0;
       o.getContext('2d').drawImage(c,x0,y0,x1-x0,y1-y0,0,0,x1-x0,y1-y0);
-      resolve(o.toDataURL('image/jpeg',.82));
+      resolve(o.toDataURL('image/jpeg',.86));
+      } catch (e) { reject(e); }
     };
-    img2.onerror=function(){resolve(dataUrl);};
+    img2.onerror=function(){reject(new Error('Image could not be decoded'));};
     img2.src=dataUrl;
   });
 }
@@ -1497,142 +1515,120 @@ function openReceiptSheet(jobId, initial, onSave) {
     jobId:jobId, notes:'', reimbursable:true, image:null
   };
   if (initial && !form.image && IMG[form.id]) form.image = IMG[form.id];
-  var scanSt = 'idle', scanMsg = '';
-  var fileInput;
-  var photoZone, spinnerDiv, scanResult;
+  var busy = false;
+  var status, photoPreview, cameraBtn, uploadBtn, scanBtn, geminiBtn;
 
-  function setScan(st, msg) {
-    scanSt = st; scanMsg = msg||'';
-    var busy = (st==='crop'||st==='scan');
-    if (photoZone) {
-      photoZone.style.borderColor = busy?'#00AEEF':'rgba(255,255,255,.09)';
-    }
-    if (spinnerDiv) spinnerDiv.style.display = busy?'flex':'none';
-    if (spinnerDiv) { var stxt=spinnerDiv.querySelector('.scan-txt'); if(stxt) stxt.textContent=msg; }
-    if (scanResult) {
-      if (st==='ok'||st==='err') {
-        scanResult.style.display='flex';
-        scanResult.querySelector('.scan-icon').innerHTML='';
-        scanResult.querySelector('.scan-icon').appendChild(st==='ok'?IC.check(14,'#30d158'):IC.xmark(14,'#ff453a'));
-        scanResult.querySelector('.scan-txt2').textContent=msg;
-        scanResult.querySelector('.scan-txt2').style.color=st==='ok'?'#30d158':'#ff453a';
-      } else {
-        scanResult.style.display='none';
-      }
-    }
+  function setStatus(message, working) {
+    busy = working;
+    status.textContent = message;
+    cameraBtn.disabled = uploadBtn.disabled = working;
+    scanBtn.disabled = !form.image || working;
+    if (geminiBtn) geminiBtn.disabled = !form.image || working;
+    overlay.querySelector('.sheet-nav button:last-child').disabled = working;
   }
 
   function submit() {
+    if (busy) return;
     if (!form.vendor.trim()) { alert('Enter a vendor name.'); return; }
     var amt = parseFloat(form.amount);
-    if (isNaN(amt)||amt<0) { alert('Enter a valid amount.'); return; }
+    if (!Number.isFinite(amt) || amt < 0) { alert('Enter a valid amount.'); return; }
     form.amount = amt;
-    overlay.remove();
-    onSave(Object.assign({},form));
+    setStatus('Saving receipt…', true);
+    Promise.resolve().then(function(){ return onSave(Object.assign({},form)); })
+      .then(function(){ overlay.remove(); })
+      .catch(function(e){ setStatus(e.message || 'Could not save the receipt. Try again.', false); });
   }
 
   function close() { overlay.remove(); }
 
   var overlay = makeSheet(
     initial?'Edit Receipt':'New Receipt',
-    close, submit, initial?'Save':'Add',
+    close, submit, initial?'Save':'Add receipt',
     function(body) {
-      // Photo zone
-      var photoWrap = div({style:{padding:'12px 16px 6px'}});
-      photoZone = div({className:'photo-zone'});
-      photoZone.style.borderStyle='dashed';
-      photoZone.style.borderWidth='1.5px';
-      photoZone.style.borderColor='rgba(255,255,255,.09)';
+      var photoWrap = div({className:'receipt-photo-panel'});
+      photoWrap.appendChild(el('h3', null, 'Receipt photo'));
+      photoPreview = btn({type:'button', className:'receipt-photo-preview',
+        'aria-label':'View full receipt photo', onClick:function(){openImageViewer(form.image, function(){fileInput.click();});}});
+      photoPreview.hidden = true;
 
-      var camPlaceholder = div({style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'0'}});
-      camPlaceholder.appendChild(IC.cam(28,'rgba(255,255,255,.25)'));
-      var ct=div({style:{fontSize:'14px',color:'rgba(255,255,255,.25)',marginTop:'8px'}},['Tap to add receipt photo']);
-      var cs=div({style:{fontSize:'11px',color:'rgba(255,255,255,.18)',marginTop:'3px'}},['Camera · Photo Library · Files']);
-      camPlaceholder.appendChild(ct); camPlaceholder.appendChild(cs);
-      photoZone.appendChild(camPlaceholder);
-
-      spinnerDiv = div({className:'photo-overlay', style:{display:'none'}});
-      var sp = div({className:'spinner'});
-      var stxt = div({className:'scan-txt', style:{color:'#fff',fontSize:'13px'}},['']);
-      spinnerDiv.appendChild(sp); spinnerDiv.appendChild(stxt);
-      photoZone.appendChild(spinnerDiv);
-
-      if (form.image) {
-        camPlaceholder.style.display='none';
-        var imgEl = img({src:form.image, alt:''});
-        imgEl.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0';
-        photoZone.appendChild(imgEl);
+      var cameraInput = inp({type:'file', accept:'image/*', capture:'environment', hidden:'hidden'});
+      var fileInput = inp({type:'file', accept:'image/*', hidden:'hidden'});
+      cameraBtn = btn({type:'button', className:'studio-primary', onClick:function(){cameraInput.click();}},'Take photo');
+      uploadBtn = btn({type:'button', className:'receipt-photo-action', onClick:function(){fileInput.click();}},'Upload photo');
+      scanBtn = btn({type:'button', className:'receipt-photo-action', onClick:function(){readPhoto(false);}},'Scan again');
+      scanBtn.hidden = !form.image;
+      var actions = div({className:'receipt-photo-actions'},[cameraBtn,uploadBtn,scanBtn]);
+      if (localStorage.getItem('fg-gemini-key')) {
+        geminiBtn = btn({type:'button', className:'receipt-photo-action', onClick:function(){
+          if (window.confirm('Send this receipt image to Google Gemini for scanning?')) readPhoto(true);
+        }},'Scan with Gemini');
+        geminiBtn.hidden = !form.image;
+        actions.appendChild(geminiBtn);
       }
-
-      photoZone.style.position='relative';
-      photoZone.addEventListener('click', function(){
-        if (form.image) {
-          // Already has photo — show fullscreen viewer
-          openImageViewer(form.image, function() {
-            // Optional: re-pick photo from viewer
-            fileInput && fileInput.click();
-          });
-        } else {
-          fileInput && fileInput.click();
+      status = div({className:'receipt-scan-status', role:'status', 'aria-live':'polite'},
+        'Scan a photo to fill in the vendor, date and total. Review the fields before saving.');
+      function showPhoto() {
+        if (!form.image) return;
+        photoPreview.replaceChildren(img({src:form.image,alt:'Receipt preview'}));
+        photoPreview.hidden = scanBtn.hidden = false;
+        if (geminiBtn) geminiBtn.hidden = false;
+      }
+      async function readPhoto(useGemini) {
+        setStatus(useGemini?'Reading with Gemini…':'Reading receipt on this device…', true);
+        var before = Object.assign({},form);
+        try {
+          var result = useGemini ? await scanReceiptWithGemini(form.image) :
+            await window.FGBReceiptOCR.read(form.image, function(message){if(overlay.isConnected) status.textContent=message;});
+          if (!overlay.isConnected) return;
+          if (!useGemini) result = parseReceiptText(result.split(/\r?\n/).map(function(line){return line.trim();}).filter(Boolean));
+          var count=0;
+          function apply(key, control, value) {
+            if (form[key] !== before[key] || value === null || value === '') return;
+            form[key]=value; control.value=value; count++;
+          }
+          apply('vendor',vendorInp,result.vendor);
+          apply('amount',amtInp,Number.isFinite(result.amount)?result.amount.toFixed(2):null);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(result.date)) {
+            var parsedDate = new Date(result.date+'T00:00:00Z');
+            if (!isNaN(parsedDate) && parsedDate.toISOString().slice(0,10)===result.date) apply('date',dateInp,result.date);
+          }
+          if (CATS.indexOf(result.category)>=0) apply('category',catSel,result.category);
+          setStatus(count ? 'Filled '+count+' fields. '+(result.amount===null?'Enter the total and review the other fields.':'Check the total and other fields before saving.') :
+            'Photo attached. No fields could be read. Enter the details or try another photo.',false);
+        } catch (e) {
+          if (overlay.isConnected) setStatus('Photo attached. Scan could not finish. Try again or enter the details.',false);
         }
-      });
-
-      fileInput = inp({type:'file', accept:'image/*'});
-      fileInput.style.display='none';
-      fileInput.addEventListener('change', function(e) {
-        var file = e.target.files&&e.target.files[0]; if(!file) return;
-        fileInput.value='';
-        var reader = new FileReader();
-        reader.onload = function(ev) {
-          var raw = ev.target.result;
-          showCropTool(raw, function(cropped){ processImage(cropped); }, function(orig){ processImage(orig); });
+      }
+      function handlePhoto(e) {
+        var file=e.target.files && e.target.files[0];
+        if (!file) return;
+        e.target.value='';
+        setStatus('Opening photo…',true);
+        var reader=new FileReader();
+        function failed(){if(overlay.isConnected)setStatus('Could not open that image. Choose a JPEG or PNG and try again.',false);}
+        reader.onerror=reader.onabort=failed;
+        reader.onload=function(){
+          if(!overlay.isConnected)return;
+          showCropTool(reader.result, processImage, processImage, failed);
         };
         reader.readAsDataURL(file);
-      });
-
-      var processImage = function(raw) {
-          setScan('crop','Processing...');
-          prepImage(raw).then(function(prepped){
-            camPlaceholder.style.display='none';
-            var oldImg = photoZone.querySelector('img[style*="position:absolute"]');
-            if(oldImg) oldImg.remove();
-            var imgEl2=document.createElement('img');
-            imgEl2.src=prepped; imgEl2.alt='';
-            imgEl2.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0';
-            photoZone.appendChild(imgEl2);
-            form.image=prepped;
-            setScan('scan','Reading receipt...');
-            scanReceipt(prepped).then(function(res){
-              var n=0;
-              if(res.vendor&&res.vendor.trim()){ form.vendor=res.vendor.trim(); vendorInp.value=form.vendor; vendorInp.style.color='#fff'; n++; }
-              if(res.amount&&res.amount>0){ form.amount=res.amount.toFixed(2); amtInp.value=form.amount; amtInp.style.color='#fff'; n++; }
-              if(res.date&&/^\d{4}-\d{2}-\d{2}$/.test(res.date)){ form.date=res.date; dateInp.value=form.date; n++; }
-              if(res.category&&res.category.trim()){ form.category=res.category.trim(); catSel.value=form.category; n++; }
-              if(n===0){ form.date=today(); dateInp.value=form.date; }
-              setScan('ok',n>0?'Auto-filled '+n+' field'+(n>1?'s':'')+' — review below':'Photo saved — fill in Amount and Vendor below');
-              // Auto-focus first empty important field
-              setTimeout(function(){
-                if(!form.amount||parseFloat(form.amount)===0){ amtInp.focus(); }
-                else if(!form.vendor){ vendorInp.focus(); }
-              }, 400);
-              setTimeout(function(){setScan('idle','');},5000);
-            }).catch(function(err){
-              console.error(err);
-              form.date=today(); dateInp.value=form.date;
-              setScan('ok','Photo saved — fill in Amount and Vendor below');
-              setTimeout(function(){setScan('idle','');},4000);
-            });
-          });
       }
-
-      scanResult = div({style:{display:'none',alignItems:'center',gap:'5px',marginTop:'8px',paddingLeft:'2px'}});
-      var scanIcon = div({className:'scan-icon'});
-      var scanTxt2 = div({className:'scan-txt2', style:{fontSize:'12px'}});
-      scanResult.appendChild(scanIcon); scanResult.appendChild(scanTxt2);
-
-      photoWrap.appendChild(photoZone);
-      photoWrap.appendChild(fileInput);
-      photoWrap.appendChild(scanResult);
+      async function processImage(raw) {
+        if (!overlay.isConnected) return;
+        setStatus('Preparing photo…',true);
+        try {
+          form.image=await prepImage(raw);
+          if (!overlay.isConnected) return;
+          showPhoto();
+          await readPhoto(false);
+        } catch (e) {
+          if (overlay.isConnected) setStatus('Could not prepare that image. Choose another photo.',false);
+        }
+      }
+      cameraInput.addEventListener('change',handlePhoto);
+      fileInput.addEventListener('change',handlePhoto);
+      showPhoto();
+      photoWrap.append(photoPreview,actions,cameraInput,fileInput,status);
       body.appendChild(photoWrap);
 
       // Fields
@@ -1640,23 +1636,18 @@ function openReceiptSheet(jobId, initial, onSave) {
       dateInp.className='field-input';
       dateInp.addEventListener('change',function(){ form.date=dateInp.value; });
 
-      var amtInp = inp({type:'number', inputMode:'decimal', step:'0.01', min:'0', placeholder:'0.00', value:form.amount||''});
+      var amtInp = inp({type:'number', inputMode:'decimal', step:'0.01', min:'0', placeholder:'0.00', value:form.amount==null?'':form.amount});
       amtInp.className='field-input';
-      amtInp.style.color=form.amount?'#fff':'rgba(255,255,255,.22)';
-      amtInp.addEventListener('input',function(){ form.amount=amtInp.value; amtInp.style.color=amtInp.value?'#fff':'rgba(255,255,255,.22)'; });
+      amtInp.addEventListener('input',function(){ form.amount=amtInp.value; });
 
       var vendorInp = makeInput('e.g. Home Depot, Shell...', form.vendor, function(v){ form.vendor=v; });
       vendorInp.className='field-input';
-      vendorInp.style.color=form.vendor?'#fff':'rgba(255,255,255,.22)';
-      vendorInp.addEventListener('input',function(){ vendorInp.style.color=vendorInp.value?'#fff':'rgba(255,255,255,.22)'; });
 
       var catSel = makeSelect(CATS, form.category, function(v){ form.category=v; });
       var paySel = makeSelect(PAY, form.payment, function(v){ form.payment=v; });
 
       var notesInp = makeInput('Optional', form.notes, function(v){ form.notes=v; });
       notesInp.className='field-input';
-      notesInp.style.color=form.notes?'#fff':'rgba(255,255,255,.22)';
-      notesInp.addEventListener('input',function(){ notesInp.style.color=notesInp.value?'#fff':'rgba(255,255,255,.22)'; });
 
       // Date + Amount row
       var dateRow = makeFieldRow('Date', dateInp, false, true);
@@ -1686,16 +1677,35 @@ function openReceiptSheet(jobId, initial, onSave) {
       body.appendChild(togGroup);
     }
   );
+  overlay.classList.add('receipt-entry-sheet');
   document.body.appendChild(overlay);
 }
 
 /* ═══════════════════════════════════════════════════
    JOB FORM SHEET
 ═══════════════════════════════════════════════════ */
+function invoiceSequence(name, year) {
+  var match = /^([0-9]{4})-([0-9]+)(?=\s|$)/.exec(String(name || '').trim());
+  if (!match || match[1] !== String(year)) return 0;
+  var sequence = Number(match[2]);
+  return Number.isSafeInteger(sequence) && sequence < Number.MAX_SAFE_INTEGER ? sequence : 0;
+}
+
+function nextInvoiceNumber(year) {
+  var names = dbGet().jobs.map(function(job){ return job.name; });
+  names = names.concat(Object.keys(FGB.ledgerIndex().ids));
+  var saved = Number(localStorage.getItem('fg-invoice-sequence-' + year));
+  var last = Number.isSafeInteger(saved) && saved > 0 && saved < Number.MAX_SAFE_INTEGER ? saved : 0;
+  names.forEach(function(name){ last = Math.max(last, invoiceSequence(name, year)); });
+  return year + '-' + (last + 1);
+}
+
 function openJobSheet(onSave, existing) {
   var isEdit = !!existing;
+  var year = new Date().getFullYear();
+  var suggestedNumber = isEdit ? '' : nextInvoiceNumber(year);
   var data = {
-    name:      isEdit ? (existing.name||'')      : '',
+    name:      isEdit ? (existing.name||'') : suggestedNumber + ' ',
     location:  isEdit ? (existing.location||'')  : '',
     startDate: isEdit ? (existing.startDate||'') : today(),
     endDate:   isEdit ? (existing.endDate||'')   : '',
@@ -1704,19 +1714,49 @@ function openJobSheet(onSave, existing) {
   var DIM = 'rgba(255,255,255,.22)';
 
   function submit() {
-    if (!data.name.trim()) { alert('Enter a job name.'); return; }
-    if (data.location && data.location.trim()) saveCityEntry(data.location.trim());
+    var name = data.name.trim();
+    if (!isEdit) {
+      var number = /^([0-9]{4}-[0-9]+)(?:\s+|$)/.exec(name);
+      var title = number ? name.slice(number[0].length).trim() : name;
+      if (!title) { alert('Enter the customer or job name after the number.'); return; }
+      var prefix = number && number[1] !== suggestedNumber ? number[1] : nextInvoiceNumber(year);
+      var numberYear = prefix.slice(0,4);
+      var sequence = invoiceSequence(prefix,numberYear);
+      if (!sequence) { alert('Enter a valid job number, for example ' + suggestedNumber + '.'); return; }
+      if (dbGet().jobs.some(function(job){ return invoiceSequence(job.name,numberYear)===sequence; })) {
+        alert('An invoice report already uses ' + prefix + '. Choose a different number.');
+        return;
+      }
+      name = prefix + ' ' + title;
+    }
+    if (!name) { alert('Enter a job name.'); return; }
+    try {
+      onSave({id: isEdit ? existing.id : uid(), name:name, location:data.location,
+        startDate:data.startDate, endDate:data.endDate, notes:data.notes});
+    } catch (e) {
+      alert('Could not save the report. Free up device storage and try again.');
+      return;
+    }
+    if (!isEdit && invoiceSequence(name,year)) {
+      try {
+        var key = 'fg-invoice-sequence-' + year;
+        var previous = Number(localStorage.getItem(key)) || 0;
+        localStorage.setItem(key, String(Math.max(previous,invoiceSequence(name,year))));
+      } catch (e) {}
+    }
+    try { if (data.location && data.location.trim()) saveCityEntry(data.location.trim()); } catch (e) {}
     overlay.remove();
-    onSave({id: isEdit ? existing.id : uid(), name:data.name.trim(), location:data.location,
-      startDate:data.startDate, endDate:data.endDate, notes:data.notes});
   }
 
   var overlay = makeSheet(isEdit?'Edit Report':'New Report', function(){overlay.remove();}, submit, isEdit?'Save':'Create', function(body){
-    var nameInp = makeInput('e.g. 2026-20 United Cleveland', data.name, function(v){data.name=v;});
+    var nameInp = makeInput('Customer or job name', data.name, function(v){data.name=v;});
     nameInp.className='field-input';
-    nameInp.style.color=data.name?'#fff':DIM;
-    if(!isEdit) setTimeout(function(){nameInp.focus();},100);
-    nameInp.addEventListener('input',function(){ nameInp.style.color=nameInp.value?'#fff':DIM;});
+    nameInp.style.color='var(--ink)';
+    if(!isEdit) setTimeout(function(){
+      if (!nameInp.isConnected) return;
+      nameInp.focus();
+      nameInp.setSelectionRange(nameInp.value.length,nameInp.value.length);
+    },100);
 
     var cityResult = makeCityInput('City, state or customer', data.location, function(v){data.location=v;});
     var locInp = cityResult.input;
@@ -1865,17 +1905,25 @@ function renderJobDetail(job) {
   }
   function getTotal(){ return getAll().reduce(function(s,r){return s+r.amount;},0); }
 
-  function saveReceipt(r) {
-    // Photo goes to IndexedDB + RAM, never into localStorage
-    if (r.image && typeof r.image==='string' && r.image.indexOf('data:')===0){
-      IMG[r.id]=r.image; idbPutImg(r.id, r.image);
+  async function saveReceipt(r) {
+    var previousImage=IMG[r.id];
+    var newImage=r.image && r.image!==previousImage;
+    if(newImage && !await idbPutImg(r.id,r.image)) {
+      throw new Error('Could not save the photo. Free up device storage and try again.');
     }
-    var stored = Object.assign({}, r); delete stored.image;
-    db = dbGet();
-    var ex=db.receipts.find(function(x){return x.id===stored.id;});
-    if(ex){ db.receipts=db.receipts.map(function(x){return x.id===stored.id?stored:x;}); }
-    else { db.receipts=[stored].concat(db.receipts); }
-    if(!dbSave(db)){ alert('Could not save — please use Settings \u2192 Export to back up, then reload the app.'); return; }
+    var stored=Object.assign({},r); delete stored.image;
+    db=dbGet();
+    var existing=db.receipts.findIndex(function(item){return item.id===stored.id;});
+    if(existing>=0) db.receipts[existing]=stored;
+    else db.receipts.unshift(stored);
+    if(!dbSave(db)) {
+      if(newImage) {
+        if(previousImage) await idbPutImg(r.id,previousImage);
+        else await idbDelImg(r.id);
+      }
+      throw new Error('Could not save the receipt. Free up device storage and try again.');
+    }
+    if(newImage) IMG[r.id]=r.image;
     redraw();
   }
   function deleteReceipt(id) {
@@ -1930,7 +1978,7 @@ function renderJobDetail(job) {
     var titleRow=div({style:{display:'flex',alignItems:'baseline',justifyContent:'space-between',padding:'14px 16px 0'}});
     titleRow.appendChild(span({className:'fgb-title'},'Receipts'));
     titleRow.appendChild(span({className:'fgb-title-amt'},money(total)));
-    var addReceipt=btn({className:'studio-primary',onClick:function(){openReceiptSheet(job.id,null,saveReceipt);}},'Add receipt');
+    var addReceipt=btn({className:'studio-primary',onClick:function(){openReceiptSheet(job.id,null,saveReceipt);}},'Scan or add receipt');
     titleRow.appendChild(addReceipt);
     screen.appendChild(titleRow);
 
@@ -1993,7 +2041,7 @@ function renderJobDetail(job) {
 
           row.addEventListener('click',function(){
             openReceiptDetail(r,
-              function(rc){ openReceiptSheet(job.id,rc,function(saved){ saveReceipt(saved); }); },
+              function(rc){ openReceiptSheet(job.id,rc,saveReceipt); },
               function(id){ deleteReceipt(id); });
           });
           group.appendChild(row);
@@ -2005,7 +2053,7 @@ function renderJobDetail(job) {
 
     // Tab bar
     screen.appendChild(makeTabBar(
-      function(){ openReceiptSheet(job.id,null,function(r){ saveReceipt(r); }); },
+      function(){ openReceiptSheet(job.id,null,saveReceipt); },
       doExport
     ));
 
@@ -2149,6 +2197,27 @@ function copyJobToLedger(job, receipts) {
   FGB.sendToLedger([b.job]);
 }
 
+function copyLegacyLedgerCode(job, receipts) {
+  var summary = buildLedgerJob(job, receipts);
+  if (!summary) { alert('Add a receipt before copying this report.'); return; }
+  var code = JSON.stringify({
+    _fanguys_bridge: 'invoice->ledger',
+    v: 1,
+    exportedAt: new Date().toISOString(),
+    jobs: [summary.job]
+  });
+  function manualCopy() {
+    window.prompt('Copy this code, then open Ledger Pro and choose Import from Invoice Pro.', code);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(function(){
+      alert('Copied. In Ledger Pro, choose Import from Invoice Pro and paste the code.');
+    }).catch(manualCopy);
+  } else {
+    manualCopy();
+  }
+}
+
 /* Every report with receipts that isn't in the Ledger yet */
 function unsentReports() {
   var db = dbGet(), idx = FGB.ledgerIndex(), out = [];
@@ -2258,6 +2327,9 @@ function openJobMenu(e, job, receipts, onEdit, onDelete) {
   } else {
     menu.appendChild(menuItem('📒', 'Send to Ledger', function(){ copyJobToLedger(job, receipts); }));
   }
+  menu.appendChild(menuItem('📋', 'Copy for standalone Ledger Pro', function(){
+    copyLegacyLedgerCode(job, receipts);
+  }));
   menu.appendChild(menuItem('📦', 'Archive Job (free up space)', function(){
     archiveJob(job, receipts);
   }));
@@ -2306,7 +2378,7 @@ function renderJobList() {
     logoWrap.appendChild(img({src:'assets/brand-2a40d1ca.png', alt:'Fan Guys', style:{height:'30px',width:'auto',display:'block'}}));
     logoWrap.appendChild(div({className:'fgb-brand'},['Fan Guys Books']));
     var addJobBtn=btn({className:'nav-btn',onClick:function(){
-      openJobSheet(function(j){ db=dbGet(); db.jobs=[j].concat(db.jobs); dbSave(db); if(FGBDrive.connected()) FGBDrive.ensureFolder(j).catch(function(){}); redraw(); renderJobDetail(j); });
+      openJobSheet(function(j){ db=dbGet(); db.jobs=[j].concat(db.jobs); if(!dbSave(db)) throw new Error('Report save failed'); if(FGBDrive.connected()) FGBDrive.ensureFolder(j).catch(function(){}); redraw(); renderJobDetail(j); });
     }});
     addJobBtn.setAttribute('aria-label','New report');
     addJobBtn.appendChild(IC.plus(20,'#00AEEF'));
@@ -2465,7 +2537,7 @@ function renderJobList() {
     } else {
     // Tab bar
     screen.appendChild(makeTabBar(function(){
-      openJobSheet(function(j){ db=dbGet(); db.jobs=[j].concat(db.jobs); dbSave(db); if(FGBDrive.connected()) FGBDrive.ensureFolder(j).catch(function(){}); redraw(); renderJobDetail(j); });
+      openJobSheet(function(j){ db=dbGet(); db.jobs=[j].concat(db.jobs); if(!dbSave(db)) throw new Error('Report save failed'); if(FGBDrive.connected()) FGBDrive.ensureFolder(j).catch(function(){}); redraw(); renderJobDetail(j); });
     }));
     }
 

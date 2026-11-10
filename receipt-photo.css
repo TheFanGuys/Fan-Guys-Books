@@ -1,0 +1,39 @@
+.fgb-invoices .receipt-photo-panel {
+  margin: 12px 16px 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+}
+.receipt-photo-panel h3 { margin: 0 0 12px; font-size: 15px; }
+.receipt-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.receipt-photo-actions button { flex: 1 0 auto; min-height: 44px; margin: 0; }
+.receipt-photo-action {
+  padding: 9px 12px;
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+}
+.receipt-photo-actions button:disabled { opacity: .65; }
+.receipt-photo-panel [hidden] { display: none !important; }
+.receipt-photo-preview {
+  display: block;
+  width: 100%;
+  height: 136px;
+  margin: 0 0 12px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--soft);
+}
+.receipt-photo-preview img { width: 100%; height: 100%; object-fit: contain; }
+.receipt-scan-status { min-height: 18px; margin-top: 10px; font-size: 13px; line-height: 1.45; color: var(--ink2); }
+.fgb-invoices .crop-header button { min-width: 52px; min-height: 44px; }
+.fgb-invoices .receipt-entry-sheet .sheet-nav button:first-child { color: var(--ink2) !important; }
+.fgb-invoices .receipt-entry-sheet .field-input { color: var(--ink) !important; }
+.fgb-invoices .receipt-entry-sheet .field-input::placeholder { color: var(--ink2); opacity: .75; }

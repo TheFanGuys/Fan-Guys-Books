@@ -1,0 +1,16 @@
+Bundled third-party OCR assets, loaded only when a receipt is scanned.
+
+tesseract.min.js and worker.min.js
+Tesseract.js 6.0.1, https://github.com/naptha/tesseract.js
+Source distribution: https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/
+
+tesseract-core-lstm.wasm.js
+Tesseract.js-core 6.0.0, https://github.com/naptha/tesseract.js-core
+Source distribution: https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0/
+
+eng.traineddata.gz
+English recognition data, @tesseract.js-data/eng 1.0.0, 4.0.0_best_int
+Source distribution: https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int/
+Upstream Tesseract language data: https://github.com/tesseract-ocr/tessdata_best
+
+See LICENSE.txt for the Apache License 2.0.
