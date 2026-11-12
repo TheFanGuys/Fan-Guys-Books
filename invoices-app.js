@@ -2051,6 +2051,24 @@ function renderJobDetail(job) {
     }
     screen.appendChild(list);
 
+    // Finish bar: email the invoice (PDF saved to the job's Drive folder, link in the email)
+    (function(){
+      var all=(dbGet().receipts||[]).filter(function(r){return r.jobId===job.id;});
+      if(!all.length || !window.FGBDrive) return;
+      var who=(FGBDrive.billTo()[0]||{}).name||'customer';
+      var bar=div({className:'fgb-sendbar'});
+      var em=FGBDrive.emailedOn && FGBDrive.emailedOn(job);
+      var send=btn({className:'studio-primary fgb-sendbtn',onClick:function(){
+        var b=buildLedgerJob(job, all);
+        var t=money(b ? b.totals.invoice : all.reduce(function(s,r){return s+(+r.amount||0);},0));
+        FGBDrive.emailInvoice(job, t, function(){ return buildPDF(job, all, {blob:true}); });
+      }}, (em?'Email again':'Email invoice')+' \u00b7 save to Drive');
+      bar.appendChild(send);
+      bar.appendChild(div({className:'fgb-sendnote'}, em ? ('Emailed '+new Date(em).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' to '+who) : ('Saves the PDF to the job folder in Google Drive and opens an email to '+who+' with the link.')));
+      screen.appendChild(bar);
+      FGBDrive.onEmailed=function(){ renderJobDetail(job); };
+    })();
+
     // Tab bar
     screen.appendChild(makeTabBar(
       function(){ openReceiptSheet(job.id,null,saveReceipt); },

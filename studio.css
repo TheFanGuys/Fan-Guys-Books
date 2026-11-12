@@ -194,3 +194,7 @@ body.fgb .pin-screen,body.fgb #lock-screen{background:#f7f8fa}
 /* Scope legacy Ledger navigation rules away from the shared sidebar. */
 body.fgb .studio-rail nav{position:static;display:block;inset:auto;width:auto;height:auto;max-width:none;margin:0;padding:0!important;background:transparent!important;border:0;box-shadow:none;flex:none;backdrop-filter:none}
 body.fgb .studio-ledger-mobile{max-width:none;margin:0;height:auto;box-sizing:border-box;backdrop-filter:none}
+
+.fgb-sendbar{padding:10px 16px 12px;border-top:1px solid var(--line,#e3e8ee);background:var(--card,#fff)}
+.fgb-sendbtn{width:100%;min-height:48px;font-size:16px}
+.fgb-sendnote{margin-top:6px;font-size:12.5px;color:var(--ink2,#5b6b78);text-align:center}
