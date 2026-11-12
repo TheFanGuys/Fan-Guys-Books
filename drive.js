@@ -93,7 +93,19 @@ var FGBDrive = (function () {
     if (job && job.startDate && /^\d{4}/.test(job.startDate)) return +job.startDate.slice(0, 4);
     return new Date().getFullYear();
   }
-  function folderName(job) { return String(job && job.name || 'Job').replace(/[\/\\]/g, '-').trim() || 'Job'; }
+  /* Job folder name: job number first, then the report name, then city/state if it isn't already in the name.
+     "2026-42" + "United Airlines" + "Cleveland, OH" -> "2026-42 United Airlines Cleveland OH" */
+  function legacyName(job) { return String(job && job.name || 'Job').replace(/[\/\\]/g, '-').trim() || 'Job'; }
+  function folderName(job) {
+    var name = String(job && job.name || '').replace(/\s+/g, ' ').trim();
+    var m = /^(\d{4}-\d+)\s*(.*)$/.exec(name);
+    var no = m ? m[1] : '', rest = m ? m[2] : name;
+    var parts = String(job && job.location || '').split(',').map(function (p) { return p.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+    var low = ' ' + rest.toLowerCase() + ' ';
+    parts.forEach(function (p) { if (low.indexOf(' ' + p.toLowerCase() + ' ') < 0) { rest = (rest + ' ' + p).trim(); low = ' ' + rest.toLowerCase() + ' '; } });
+    var out = [no, rest].filter(Boolean).join(' ').replace(/[\/\\]/g, '-').trim();
+    return out || 'Job';
+  }
   function defaultParent() { var l = billTo(); return (l[0] && l[0].folder) || ''; }
   function savedFolder(job) { var m = json(K_FOLDERS, {}); return m[job.id] || null; }
   function remember(job, d, parent) {
@@ -102,7 +114,8 @@ var FGBDrive = (function () {
     set(K_FOLDERS, JSON.stringify(m));
     return m[job.id];
   }
-  function fresh(f, job, parent) { return f && f.name === folderName(job) && f.year === yearOf(job) && (f.parent || '') === (parent || ''); }
+  /* A folder already made under the old naming (report name only) keeps being used, so photos don't split. */
+  function fresh(f, job, parent) { return f && (f.name === folderName(job) || f.name === legacyName(job)) && f.year === yearOf(job) && (f.parent || '') === (parent || ''); }
   /* Make (or find) the job folder. A renamed report gets its folder looked up again. */
   function ensureFolder(job, parent) {
     if (parent === undefined) { var sf = savedFolder(job); parent = sf ? (sf.parent || '') : defaultParent(); }
