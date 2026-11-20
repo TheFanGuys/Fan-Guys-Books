@@ -1176,7 +1176,7 @@ function makeCityInput(placeholder, value, onChange) {
     dropdown.style.top   = (rect.bottom + 2) + 'px';
     dropdown.style.width = rect.width + 'px';
     dropdown.style.borderRadius = '10px';
-    results.slice(0,5).forEach(function(city) {
+    results.slice(0,6).forEach(function(city) {
       var opt = div({className:'city-option'}, [city]);
       opt.addEventListener('mousedown', function(e){ e.preventDefault(); });
       opt.addEventListener('click', function() {
@@ -1257,24 +1257,46 @@ function makeCityInput(placeholder, value, onChange) {
     'Washington, DC'
   ];
 
-  function fetchCities(q) {
-    if (q.length < 2) { closeDropdown(); return; }
-    var q2 = q.toLowerCase();
-    // Combine built-in list + user's saved cities (no duplicates)
-    var saved = getSavedCities();
-    var all = saved.slice();
-    CITIES.forEach(function(c){ if (all.indexOf(c)===-1) all.push(c); });
-    var matches = all.filter(function(c){ return c.toLowerCase().indexOf(q2) > -1; });
-    // Sort: saved cities first, then starts-with, then contains
-    matches.sort(function(a,b){
-      var aInSaved = saved.indexOf(a) > -1 ? 0 : 1;
-      var bInSaved = saved.indexOf(b) > -1 ? 0 : 1;
-      if (aInSaved !== bInSaved) return aInSaved - bInSaved;
-      var aS = a.toLowerCase().indexOf(q2)===0 ? 0 : 1;
-      var bS = b.toLowerCase().indexOf(q2)===0 ? 0 : 1;
-      return aS-bS || a.localeCompare(b);
+  /* Full US city list (us-cities.js) loads the first time you type in this box.
+     Until it arrives (or if it can't load) the built-in list above still works. */
+  var BIG = null;
+  function loadBig(then) {
+    if (window.FG_US_CITIES) { buildBig(); then && then(); return; }
+    if (!window.__fgCitiesLoading) {
+      window.__fgCitiesLoading = true;
+      var sc = document.createElement('script');
+      sc.src = 'us-cities.js?v=1';
+      sc.onload = function(){ buildBig(); if (then && document.activeElement === input) then(); };
+      sc.onerror = function(){ window.__fgCitiesLoading = false; };
+      document.head.appendChild(sc);
+    }
+  }
+  function buildBig() {
+    if (BIG || !window.FG_US_CITIES) return;
+    BIG = [];
+    Object.keys(window.FG_US_CITIES).forEach(function(st){
+      window.FG_US_CITIES[st].split('|').forEach(function(c){ BIG.push(c + ', ' + st); });
     });
-    showSuggestions(matches);
+  }
+  function norm(x) { return String(x||'').toLowerCase().replace(/[.,]/g,' ').replace(/\s+/g,' ').trim(); }
+
+  function fetchCities(q) {
+    var q2 = norm(q);
+    if (q2.length < 2) { closeDropdown(); return; }
+    var saved = getSavedCities();
+    var seen = {}, starts = [], contains = [];
+    function consider(c, rank) {
+      if (seen[c]) return;
+      var n = norm(c);
+      if (n.indexOf(q2) === 0) { seen[c] = 1; starts.push({c:c, r:rank}); }
+      else if (rank < 2 && n.indexOf(q2) > -1) { seen[c] = 1; contains.push({c:c, r:rank}); }
+    }
+    saved.forEach(function(c){ consider(c, 0); });     // cities you've used before
+    CITIES.forEach(function(c){ consider(c, 1); });    // big cities
+    if (BIG) BIG.forEach(function(c){ consider(c, 2); });  // every other US town
+    function byRank(a,b){ return a.r - b.r || a.c.localeCompare(b.c); }
+    starts.sort(byRank); contains.sort(byRank);
+    showSuggestions(starts.concat(contains).map(function(x){ return x.c; }));
   }
 
   input.addEventListener('input', function() {
@@ -1282,7 +1304,8 @@ function makeCityInput(placeholder, value, onChange) {
     input.style.color = v ? '#fff' : 'rgba(255,255,255,.22)';
     onChange(v);
     clearTimeout(debounce);
-    debounce = setTimeout(function(){ fetchCities(v); }, 300);
+    if (!BIG) loadBig(function(){ fetchCities(input.value); });
+    debounce = setTimeout(function(){ fetchCities(v); }, 150);
   });
   input.addEventListener('blur', function() {
     setTimeout(closeDropdown, 150);
