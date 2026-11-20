@@ -198,3 +198,11 @@ body.fgb .studio-ledger-mobile{max-width:none;margin:0;height:auto;box-sizing:bo
 .fgb-sendbar{padding:10px 16px 12px;border-top:1px solid var(--line,#e3e8ee);background:var(--card,#fff)}
 .fgb-sendbtn{width:100%;min-height:48px;font-size:16px}
 .fgb-sendnote{margin-top:6px;font-size:12.5px;color:var(--ink2,#5b6b78);text-align:center}
+
+/* Nov 2026: email bar now sits at the end of the receipt list, styled as a secondary button
+   so it isn't mistaken for "add receipt". */
+.fgb-sendbar{margin:18px 16px 24px;padding:14px 14px 12px;border:1px solid var(--line,#e3e8ee);border-radius:14px}
+.fgb-sendbtn{width:100%;min-height:46px;font-size:15.5px;font-weight:600;border-radius:10px;border:1.5px solid var(--studio-accent,#245be0);background:transparent;color:var(--studio-accent,#245be0)}
+.fgb-sendbtn:active{background:rgba(36,91,224,.08)}
+.fgb-is-return .field-input{color:#c0392b!important}
+.fgb-is-return .field-label{color:#c0392b!important}

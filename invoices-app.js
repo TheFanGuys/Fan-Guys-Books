@@ -112,7 +112,7 @@ function wireTags(recs){
 }
 
 function uid()   { return Date.now().toString(36)+Math.random().toString(36).slice(2); }
-function money(n){ return '$'+(+(n||0)).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function money(n){ var v=+(n||0); if(Math.abs(v)<0.005) v=0; return (v<0?'-$':'$')+Math.abs(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function fmtD(s) { if(!s)return''; var p=s.split('-'); return p[1]+'/'+p[2]+'/'+p[0]; }
 function today() { return new Date().toISOString().split('T')[0]; }
 
@@ -512,153 +512,188 @@ function showCropTool(dataUrl, onCrop, onSkip, onError) {
   wrap.appendChild(canvas);
 
   var hint = div({className:'crop-hint'});
-  hint.textContent = 'Drag corners to crop';
+  hint.textContent = 'Drag a corner or edge to crop';
   wrap.appendChild(hint);
   overlay.appendChild(wrap);
   document.body.appendChild(overlay);
 
   var img2 = new Image();
   img2.onload = function() {
-    // Size canvas to fit screen
-    var maxW = window.innerWidth;
-    var maxH = window.innerHeight - 52 - 60;
+    /* Crop box (rewritten Nov 2026):
+       - Photo sits inset from the screen edges so the corners are easy to grab
+         (and don't fight the iPhone swipe-back gesture).
+       - Grab any corner OR any edge. Touches just outside the photo still catch a handle.
+       - Every drag is worked out from where the box was when your finger went down,
+         so the box can't run away or collapse. */
+    var INSET = 34;                                   // space around the photo, CSS px
+    var wr = wrap.getBoundingClientRect();
+    var maxW = Math.max(120, (wr.width  || window.innerWidth)  - INSET*2);
+    var maxH = Math.max(120, (wr.height || (window.innerHeight-120)) - INSET*2 - 36); // 36 = room for hint
     var scale = Math.min(maxW / img2.width, maxH / img2.height, 1);
-    var cw = Math.round(img2.width * scale);
-    var ch = Math.round(img2.height * scale);
-    canvas.width  = cw;
-    canvas.height = ch;
+    var cw = Math.max(1, Math.round(img2.width * scale));
+    var ch = Math.max(1, Math.round(img2.height * scale));
+    var dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width  = Math.round(cw * dpr);
+    canvas.height = Math.round(ch * dpr);
+    canvas.style.width  = cw + 'px';
+    canvas.style.height = ch + 'px';
+    canvas.style.maxWidth = 'none';
+    canvas.style.maxHeight = 'none';
+    canvas.style.marginBottom = '36px';
+    wrap.style.touchAction = 'none';
     var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Start with the full receipt so the vendor and total stay visible.
-    var pad = 0;
-    var crop = { x: pad, y: pad, w: cw - pad*2, h: ch - pad*2 };
+    var crop = { x: 0, y: 0, w: cw, h: ch };
+    var MIN = 50;
 
     function drawAll() {
       ctx.clearRect(0, 0, cw, ch);
       ctx.drawImage(img2, 0, 0, cw, ch);
-      // Darken outside crop
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, cw, crop.y);                             // top
-      ctx.fillRect(0, crop.y+crop.h, cw, ch-crop.y-crop.h);      // bottom
-      ctx.fillRect(0, crop.y, crop.x, crop.h);                   // left
-      ctx.fillRect(crop.x+crop.w, crop.y, cw-crop.x-crop.w, crop.h); // right
-      // Border
-      ctx.strokeStyle = '#00AEEF';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
-      // Corner handles
-      var hs = 10;
-      ctx.fillStyle = '#00AEEF';
-      [[crop.x,crop.y],[crop.x+crop.w,crop.y],[crop.x,crop.y+crop.h],[crop.x+crop.w,crop.y+crop.h]].forEach(function(pt){
-        ctx.fillRect(pt[0]-hs/2, pt[1]-hs/2, hs, hs);
-      });
+      ctx.fillRect(0, 0, cw, crop.y);
+      ctx.fillRect(0, crop.y+crop.h, cw, ch-crop.y-crop.h);
+      ctx.fillRect(0, crop.y, crop.x, crop.h);
+      ctx.fillRect(crop.x+crop.w, crop.y, cw-crop.x-crop.w, crop.h);
       // Grid lines (rule of thirds)
-      ctx.strokeStyle = 'rgba(255,255,255,.2)';
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = 'rgba(255,255,255,.25)';
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(crop.x+crop.w/3, crop.y); ctx.lineTo(crop.x+crop.w/3, crop.y+crop.h);
       ctx.moveTo(crop.x+crop.w*2/3, crop.y); ctx.lineTo(crop.x+crop.w*2/3, crop.y+crop.h);
       ctx.moveTo(crop.x, crop.y+crop.h/3); ctx.lineTo(crop.x+crop.w, crop.y+crop.h/3);
       ctx.moveTo(crop.x, crop.y+crop.h*2/3); ctx.lineTo(crop.x+crop.w, crop.y+crop.h*2/3);
       ctx.stroke();
+      // Border
+      ctx.strokeStyle = '#00AEEF';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
+      // Thick L-shaped corners + edge tabs (easy to see what to grab)
+      var L = Math.min(26, crop.w/3, crop.h/3), T = 5;
+      ctx.fillStyle = '#00AEEF';
+      var x0=crop.x, y0=crop.y, x1=crop.x+crop.w, y1=crop.y+crop.h;
+      ctx.fillRect(x0-T/2, y0-T/2, L, T); ctx.fillRect(x0-T/2, y0-T/2, T, L);
+      ctx.fillRect(x1-L+T/2, y0-T/2, L, T); ctx.fillRect(x1-T/2, y0-T/2, T, L);
+      ctx.fillRect(x0-T/2, y1-T/2, L, T); ctx.fillRect(x0-T/2, y1-L+T/2, T, L);
+      ctx.fillRect(x1-L+T/2, y1-T/2, L, T); ctx.fillRect(x1-T/2, y1-L+T/2, T, L);
+      var mx=(x0+x1)/2, my=(y0+y1)/2, E=Math.min(30, crop.w/4, crop.h/4);
+      ctx.fillRect(mx-E/2, y0-T/2, E, T); ctx.fillRect(mx-E/2, y1-T/2, E, T);
+      ctx.fillRect(x0-T/2, my-E/2, T, E); ctx.fillRect(x1-T/2, my-E/2, T, E);
     }
     drawAll();
 
-    // Touch/mouse drag handling
-    var dragging = null; // 'tl','tr','bl','br','move'
-    var dragStart = null;
-    var cropStart = null;
-    var THRESH = 28;
+    var dragging = null;   // e.g. 'tl','t','r','move'
+    var touchId = null;
+    var startPos = null, startCrop = null;
+    var GRAB = 38;         // how close (CSS px) a finger must be to a corner/edge
 
-    function getPos(e) {
+    function pointFrom(e) {
+      var t = e;
+      if (e.changedTouches) {
+        t = null;
+        for (var i = 0; i < e.changedTouches.length; i++) if (e.changedTouches[i].identifier === touchId) t = e.changedTouches[i];
+        if (!t && touchId === null) t = e.changedTouches[0];
+        if (!t) return null;
+      }
       var r = canvas.getBoundingClientRect();
-      var touch = e.touches ? e.touches[0] : e;
-      return { x: touch.clientX - r.left, y: touch.clientY - r.top };
+      return { x: (t.clientX - r.left) * (cw / (r.width || cw)), y: (t.clientY - r.top) * (ch / (r.height || ch)) };
     }
 
-    function whichHandle(pos) {
-      var corners = {
-        tl:{x:crop.x, y:crop.y},
-        tr:{x:crop.x+crop.w, y:crop.y},
-        bl:{x:crop.x, y:crop.y+crop.h},
-        br:{x:crop.x+crop.w, y:crop.y+crop.h}
-      };
-      var closest = null, minD = THRESH;
-      Object.keys(corners).forEach(function(k){
-        var dx=pos.x-corners[k].x, dy=pos.y-corners[k].y;
-        var d=Math.sqrt(dx*dx+dy*dy);
-        if(d<minD){minD=d;closest=k;}
-      });
-      return closest;
+    function whichHandle(p) {
+      var x0=crop.x, y0=crop.y, x1=crop.x+crop.w, y1=crop.y+crop.h;
+      var nearL=Math.abs(p.x-x0)<GRAB, nearR=Math.abs(p.x-x1)<GRAB;
+      var nearT=Math.abs(p.y-y0)<GRAB, nearB=Math.abs(p.y-y1)<GRAB;
+      var inX=p.x>x0-GRAB && p.x<x1+GRAB, inY=p.y>y0-GRAB && p.y<y1+GRAB;
+      // If the box is small, pick whichever side is actually closer
+      if (nearL && nearR) { if (Math.abs(p.x-x0) < Math.abs(p.x-x1)) nearR=false; else nearL=false; }
+      if (nearT && nearB) { if (Math.abs(p.y-y0) < Math.abs(p.y-y1)) nearB=false; else nearT=false; }
+      if (nearT && nearL) return 'tl';
+      if (nearT && nearR) return 'tr';
+      if (nearB && nearL) return 'bl';
+      if (nearB && nearR) return 'br';
+      if (nearT && inX) return 't';
+      if (nearB && inX) return 'b';
+      if (nearL && inY) return 'l';
+      if (nearR && inY) return 'r';
+      if (p.x>x0 && p.x<x1 && p.y>y0 && p.y<y1) return 'move';
+      return null;
     }
 
     function onDown(e) {
+      if (e.target && e.target.closest && e.target.closest('.crop-header')) return;
+      if (dragging) return;                       // ignore a second finger
+      if (e.changedTouches) touchId = e.changedTouches[0].identifier;
+      var p = pointFrom(e);
+      if (!p) return;
+      var h = whichHandle(p);
+      if (!h) { touchId = null; return; }
       e.preventDefault();
-      var pos = getPos(e);
-      var h = whichHandle(pos);
-      if (h) {
-        dragging = h;
-      } else if (pos.x>crop.x&&pos.x<crop.x+crop.w&&pos.y>crop.y&&pos.y<crop.y+crop.h) {
-        dragging = 'move';
-      }
-      dragStart  = pos;
-      cropStart  = {x:crop.x,y:crop.y,w:crop.w,h:crop.h};
+      dragging = h;
+      startPos = p;
+      startCrop = { x:crop.x, y:crop.y, w:crop.w, h:crop.h };
     }
 
     function onMove(e) {
       if (!dragging) return;
+      var p = pointFrom(e);
+      if (!p) return;
       e.preventDefault();
-      var pos = getPos(e);
-      var dx = pos.x - dragStart.x;
-      var dy = pos.y - dragStart.y;
-      var MIN = 40;
+      var dx = p.x - startPos.x, dy = p.y - startPos.y;
+      var L = startCrop.x, T = startCrop.y, R = startCrop.x + startCrop.w, B = startCrop.y + startCrop.h;
       if (dragging === 'move') {
-        crop.x = Math.max(0, Math.min(cw-crop.w, cropStart.x+dx));
-        crop.y = Math.max(0, Math.min(ch-crop.h, cropStart.y+dy));
-      } else if (dragging === 'tl') {
-        var nx=Math.max(0,Math.min(cropStart.x+crop.w-MIN,cropStart.x+dx));
-        var ny=Math.max(0,Math.min(cropStart.y+crop.h-MIN,cropStart.y+dy));
-        crop.w+=crop.x-nx; crop.h+=crop.y-ny; crop.x=nx; crop.y=ny;
-      } else if (dragging === 'tr') {
-        crop.y=Math.max(0,Math.min(cropStart.y+crop.h-MIN,cropStart.y+dy));
-        crop.h=cropStart.h-(crop.y-cropStart.y);
-        crop.w=Math.max(MIN,Math.min(cw-crop.x,cropStart.w+dx));
-      } else if (dragging === 'bl') {
-        crop.x=Math.max(0,Math.min(cropStart.x+crop.w-MIN,cropStart.x+dx));
-        crop.w+=cropStart.x-crop.x;
-        crop.h=Math.max(MIN,Math.min(ch-crop.y,cropStart.h+dy));
-      } else if (dragging === 'br') {
-        crop.w=Math.max(MIN,Math.min(cw-crop.x,cropStart.w+dx));
-        crop.h=Math.max(MIN,Math.min(ch-crop.y,cropStart.h+dy));
+        var nx = Math.max(0, Math.min(cw - startCrop.w, L + dx));
+        var ny = Math.max(0, Math.min(ch - startCrop.h, T + dy));
+        crop.x = nx; crop.y = ny; crop.w = startCrop.w; crop.h = startCrop.h;
+      } else {
+        if (dragging.indexOf('l') >= 0 || dragging === 'l') L = Math.max(0, Math.min(R - MIN, L + dx));
+        if (dragging.indexOf('r') >= 0 && dragging !== 'l') R = Math.min(cw, Math.max(L + MIN, R + dx));
+        if (dragging.indexOf('t') >= 0) T = Math.max(0, Math.min(B - MIN, T + dy));
+        if (dragging.indexOf('b') >= 0) B = Math.min(ch, Math.max(T + MIN, B + dy));
+        crop.x = L; crop.y = T; crop.w = R - L; crop.h = B - T;
       }
       drawAll();
     }
 
-    function onUp() { dragging = null; }
+    function onUp(e) {
+      if (e && e.changedTouches && touchId !== null) {
+        var mine = false;
+        for (var i = 0; i < e.changedTouches.length; i++) if (e.changedTouches[i].identifier === touchId) mine = true;
+        if (!mine) return;
+      }
+      dragging = null; touchId = null;
+    }
 
-    canvas.addEventListener('mousedown', onDown);
-    canvas.addEventListener('mousemove', onMove);
-    canvas.addEventListener('mouseup', onUp);
-    canvas.addEventListener('touchstart', onDown, {passive:false});
-    canvas.addEventListener('touchmove', onMove, {passive:false});
-    canvas.addEventListener('touchend', onUp);
+    // Listen on the whole photo area, not just the photo, so near-edge touches still work
+    wrap.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    wrap.addEventListener('touchstart', onDown, {passive:false});
+    wrap.addEventListener('touchmove', onMove, {passive:false});
+    wrap.addEventListener('touchend', onUp);
+    wrap.addEventListener('touchcancel', onUp);
+    function cleanup() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
 
-    // Auto-crop button action
     useBtn.addEventListener('click', function() {
       // Extract cropped region at original resolution
       var scaleX = img2.width  / cw;
       var scaleY = img2.height / ch;
       var out = document.createElement('canvas');
-      out.width  = Math.round(crop.w * scaleX);
-      out.height = Math.round(crop.h * scaleY);
+      out.width  = Math.max(1, Math.round(crop.w * scaleX));
+      out.height = Math.max(1, Math.round(crop.h * scaleY));
       out.getContext('2d').drawImage(img2,
         crop.x*scaleX, crop.y*scaleY, crop.w*scaleX, crop.h*scaleY,
         0, 0, out.width, out.height);
+      cleanup();
       overlay.remove();
       onCrop(out.toDataURL('image/jpeg', 0.88));
     });
 
     skipBtn.addEventListener('click', function() {
+      cleanup();
       overlay.remove();
       onSkip(dataUrl);
     });
@@ -1515,6 +1550,8 @@ function openReceiptSheet(jobId, initial, onSave) {
     jobId:jobId, notes:'', reimbursable:true, image:null
   };
   if (initial && !form.image && IMG[form.id]) form.image = IMG[form.id];
+  var isReturn = (+form.amount || 0) < 0;
+  if (isReturn) form.amount = Math.abs(+form.amount);
   var busy = false;
   var status, photoPreview, cameraBtn, uploadBtn, scanBtn, geminiBtn;
 
@@ -1530,9 +1567,12 @@ function openReceiptSheet(jobId, initial, onSave) {
   function submit() {
     if (busy) return;
     if (!form.vendor.trim()) { alert('Enter a vendor name.'); return; }
-    var amt = parseFloat(form.amount);
-    if (!Number.isFinite(amt) || amt < 0) { alert('Enter a valid amount.'); return; }
-    form.amount = amt;
+    var amt = parseFloat(String(form.amount==null?'':form.amount).replace(/[$,\s]/g,''));
+    if (!Number.isFinite(amt)) { alert('Enter a valid amount.'); return; }
+    // Returns / refunds are saved as a negative amount so they take away from the report total.
+    if (amt < 0) isReturn = true;
+    amt = Math.abs(amt);
+    form.amount = isReturn && amt ? -amt : amt;
     setStatus('Saving receipt…', true);
     Promise.resolve().then(function(){ return onSave(Object.assign({},form)); })
       .then(function(){ overlay.remove(); })
@@ -1636,7 +1676,7 @@ function openReceiptSheet(jobId, initial, onSave) {
       dateInp.className='field-input';
       dateInp.addEventListener('change',function(){ form.date=dateInp.value; });
 
-      var amtInp = inp({type:'number', inputMode:'decimal', step:'0.01', min:'0', placeholder:'0.00', value:form.amount==null?'':form.amount});
+      var amtInp = inp({type:'number', inputMode:'decimal', step:'0.01', placeholder:'0.00', value:form.amount==null?'':form.amount});
       amtInp.className='field-input';
       amtInp.addEventListener('input',function(){ form.amount=amtInp.value; });
 
@@ -1651,7 +1691,7 @@ function openReceiptSheet(jobId, initial, onSave) {
 
       // Date + Amount row
       var dateRow = makeFieldRow('Date', dateInp, false, true);
-      var amtRow  = makeFieldRow('Amount ($)', amtInp, false, true);
+      var amtRow  = makeFieldRow(isReturn?'Return amount ($)':'Amount ($)', amtInp, false, true);
       var topRow  = div({style:{display:'flex',borderBottom:'0.5px solid rgba(255,255,255,.09)'}});
       topRow.appendChild(dateRow);
       var divider = div({className:'field-divider'});
@@ -1674,6 +1714,19 @@ function openReceiptSheet(jobId, initial, onSave) {
       var tog = makeToggle(reimb, function(v){ form.reimbursable=v; });
       togRow.appendChild(tog);
       togGroup.appendChild(togRow);
+      // Return / refund: amount comes off the report total
+      var retRow = div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 16px',borderTop:'0.5px solid rgba(255,255,255,.09)'}});
+      var retLbl = div({style:{flex:'1',minWidth:'0',paddingRight:'12px'}});
+      retLbl.appendChild(div({style:{fontSize:'16px',color:'#fff'}},'Return / refund'));
+      retLbl.appendChild(div({className:'fgb-return-hint',style:{fontSize:'12.5px',marginTop:'2px',opacity:'.7'}},'Takes this amount off the total. Snap the return receipt.'));
+      retRow.appendChild(retLbl);
+      retRow.appendChild(makeToggle(isReturn, function(v){
+        isReturn = v;
+        var lb = amtRow.querySelector('.field-label'); if (lb) lb.textContent = v ? 'Return amount ($)' : 'Amount ($)';
+        amtRow.classList.toggle('fgb-is-return', v);
+      }));
+      if (isReturn) amtRow.classList.add('fgb-is-return');
+      togGroup.appendChild(retRow);
       body.appendChild(togGroup);
     }
   );
@@ -1700,26 +1753,61 @@ function nextInvoiceNumber(year) {
   return year + '-' + (last + 1);
 }
 
+/* Report name is built for you: "2026-43" + "Wesco" + "Irving, TX" -> "2026-43 Wesco Irving TX".
+   You type the customer and the city once; the city also fills Location. */
+function locWords(loc) { return String(loc || '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim(); }
+function buildReportName(no, customer, loc) {
+  return [String(no||'').trim(), String(customer||'').replace(/\s+/g,' ').trim(), locWords(loc)].filter(Boolean).join(' ');
+}
+function splitReportName(name, loc) {
+  var raw = String(name || '').replace(/\s+/g, ' ').trim();
+  var m = /^([0-9]{4}-[0-9]+)(?:\s+|$)(.*)$/.exec(raw);
+  var no = m ? m[1] : (FGB.jobNoOf(raw) || '');
+  var rest = m ? m[2] : (no ? raw.slice(no.length).trim() : raw);
+  var low = rest.toLowerCase();
+  var full = locWords(loc).toLowerCase();
+  var city = String(loc || '').split(',')[0].replace(/\s+/g, ' ').trim().toLowerCase();
+  [full, city].some(function (tail) {
+    if (tail && low.length > tail.length && low.slice(-tail.length) === tail && low.charAt(low.length - tail.length - 1) === ' ') {
+      rest = rest.slice(0, rest.length - tail.length).trim(); return true;
+    }
+    return false;
+  });
+  return { no: no, customer: rest };
+}
+
 function openJobSheet(onSave, existing) {
   var isEdit = !!existing;
   var year = new Date().getFullYear();
   var suggestedNumber = isEdit ? '' : nextInvoiceNumber(year);
+  var parsed = isEdit ? splitReportName(existing.name, existing.location) : { no: suggestedNumber, customer: '' };
   var data = {
-    name:      isEdit ? (existing.name||'') : suggestedNumber + ' ',
+    no:        parsed.no,
+    customer:  parsed.customer,
     location:  isEdit ? (existing.location||'')  : '',
     startDate: isEdit ? (existing.startDate||'') : today(),
     endDate:   isEdit ? (existing.endDate||'')   : '',
     notes:     isEdit ? (existing.notes||'')     : ''
   };
+  var orig = isEdit ? { no: data.no, customer: data.customer, location: data.location } : null;
   var DIM = 'rgba(255,255,255,.22)';
+  var preview;
+
+  function currentName() { return buildReportName(data.no, data.customer, data.location); }
+  function updatePreview() {
+    if (!preview) return;
+    var n = currentName();
+    preview.textContent = n ? ('Report name: ' + n) : 'Report name fills in as you type.';
+  }
 
   function submit() {
-    var name = data.name.trim();
+    var no = String(data.no || '').trim();
+    var customer = String(data.customer || '').replace(/\s+/g, ' ').trim();
+    if (!customer) { alert('Enter the customer, for example Wesco.'); return; }
+    var name;
     if (!isEdit) {
-      var number = /^([0-9]{4}-[0-9]+)(?:\s+|$)/.exec(name);
-      var title = number ? name.slice(number[0].length).trim() : name;
-      if (!title) { alert('Enter the customer or job name after the number.'); return; }
-      var prefix = number && number[1] !== suggestedNumber ? number[1] : nextInvoiceNumber(year);
+      if (!/^[0-9]{4}-[0-9]+$/.test(no)) { alert('Enter a valid job number, for example ' + suggestedNumber + '.'); return; }
+      var prefix = no !== suggestedNumber ? no : nextInvoiceNumber(year);
       var numberYear = prefix.slice(0,4);
       var sequence = invoiceSequence(prefix,numberYear);
       if (!sequence) { alert('Enter a valid job number, for example ' + suggestedNumber + '.'); return; }
@@ -1727,7 +1815,21 @@ function openJobSheet(onSave, existing) {
         alert('An invoice report already uses ' + prefix + '. Choose a different number.');
         return;
       }
-      name = prefix + ' ' + title;
+      name = buildReportName(prefix, customer, data.location);
+    } else {
+      var changed = no !== orig.no || customer !== orig.customer || locWords(data.location) !== locWords(orig.location);
+      if (!changed) {
+        name = existing.name;                 // nothing touched: keep the name exactly as it was
+      } else {
+        if (no && no !== orig.no && /^[0-9]{4}-[0-9]+$/.test(no)) {
+          var ny = no.slice(0,4), sq = invoiceSequence(no, ny);
+          if (dbGet().jobs.some(function(job){ return job.id !== existing.id && invoiceSequence(job.name,ny)===sq; })) {
+            alert('An invoice report already uses ' + no + '. Choose a different number.');
+            return;
+          }
+        }
+        name = buildReportName(no, customer, data.location);
+      }
     }
     if (!name) { alert('Enter a job name.'); return; }
     try {
@@ -1749,17 +1851,17 @@ function openJobSheet(onSave, existing) {
   }
 
   var overlay = makeSheet(isEdit?'Edit Report':'New Report', function(){overlay.remove();}, submit, isEdit?'Save':'Create', function(body){
-    var nameInp = makeInput('Customer or job name', data.name, function(v){data.name=v;});
-    nameInp.className='field-input';
-    nameInp.style.color='var(--ink)';
-    if(!isEdit) setTimeout(function(){
-      if (!nameInp.isConnected) return;
-      nameInp.focus();
-      nameInp.setSelectionRange(nameInp.value.length,nameInp.value.length);
-    },100);
+    var noInp = makeInput('2026-43', data.no, function(v){ data.no = v; updatePreview(); });
+    noInp.className='field-input';
+    noInp.style.color='var(--ink)';
 
-    var cityResult = makeCityInput('City, state or customer', data.location, function(v){data.location=v;});
-    var locInp = cityResult.input;
+    var custInp = makeInput('e.g. Wesco', data.customer, function(v){ data.customer = v; updatePreview(); });
+    custInp.className='field-input';
+    custInp.style.color='var(--ink)';
+    custInp.setAttribute('autocapitalize','words');
+    if(!isEdit) setTimeout(function(){ if (custInp.isConnected) custInp.focus(); },100);
+
+    var cityResult = makeCityInput('City, ST  (e.g. Irving, TX)', data.location, function(v){ data.location = v; updatePreview(); });
     var locWrap = cityResult.wrap;
 
     var startInp = inp({type:'date', value:data.startDate});
@@ -1777,9 +1879,13 @@ function openJobSheet(onSave, existing) {
     notesInp.addEventListener('input',function(){notesInp.style.color=notesInp.value?'#fff':DIM;});
 
     body.appendChild(makeFieldGroup([
-      makeFieldRow('Job / Report Name', nameInp, false),
-      makeFieldRow('Location / Customer', locWrap, true)
+      makeFieldRow('Job #', noInp, false),
+      makeFieldRow('Customer', custInp, false),
+      makeFieldRow('City, State', locWrap, true)
     ]));
+    preview = div({className:'fgb-name-preview',style:{margin:'8px 20px 0',fontSize:'13px',color:'rgba(255,255,255,.48)'}});
+    body.appendChild(preview);
+    updatePreview();
     body.appendChild(makeFieldGroup([
       makeFieldRow('Start Date', startInp, false),
       makeFieldRow('End Date', endInp, true)
@@ -1852,7 +1958,7 @@ function openReceiptDetail(receipt, onEdit, onDelete) {
   var info=div({style:{padding:'16px 18px 6px'}});
   info.appendChild(div({className:'detail-amount'},[money(receipt.amount)]));
   info.appendChild(div({className:'detail-vendor'},[receipt.vendor]));
-  info.appendChild(div({className:'detail-meta'},[fmtD(receipt.date)+' - '+receipt.category]));
+  info.appendChild(div({className:'detail-meta'},[fmtD(receipt.date)+' - '+receipt.category+(+receipt.amount<0?' - Return / refund':'')]));
   if(receipt.reimbursable) info.appendChild(div({className:'reimb-badge'},['Reimbursable']));
   body.appendChild(info);
 
@@ -2029,7 +2135,7 @@ function renderJobDetail(job) {
 
           var info=div({className:'flex1'});
           info.appendChild(div({style:{fontSize:'15.5px',fontWeight:'600',color:'#fff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},[r.vendor]));
-          info.appendChild(div({style:{fontSize:'12.5px',color:'rgba(255,255,255,.48)',marginTop:'2px'}},[r.category]));
+          info.appendChild(div({style:{fontSize:'12.5px',color:'rgba(255,255,255,.48)',marginTop:'2px'}},[(+r.amount<0?'Return \u00b7 ':'')+r.category]));
           row.appendChild(info);
 
           var right=div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'3px',flexShrink:'0'}});
@@ -2058,14 +2164,15 @@ function renderJobDetail(job) {
       var who=(FGBDrive.billTo()[0]||{}).name||'customer';
       var bar=div({className:'fgb-sendbar'});
       var em=FGBDrive.emailedOn && FGBDrive.emailedOn(job);
-      var send=btn({className:'studio-primary fgb-sendbtn',onClick:function(){
+      var send=btn({className:'fgb-sendbtn',onClick:function(){
         var b=buildLedgerJob(job, all);
         var t=money(b ? b.totals.invoice : all.reduce(function(s,r){return s+(+r.amount||0);},0));
         FGBDrive.emailInvoice(job, t, function(){ return buildPDF(job, all, {blob:true}); });
       }}, (em?'Email again':'Email invoice')+' \u00b7 save to Drive');
       bar.appendChild(send);
       bar.appendChild(div({className:'fgb-sendnote'}, em ? ('Emailed '+new Date(em).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' to '+who) : ('Saves the PDF to the job folder in Google Drive and opens an email to '+who+' with the link.')));
-      screen.appendChild(bar);
+      // Lives at the end of the receipt list (not pinned above the + button) so it can't be hit by accident.
+      list.appendChild(bar);
       FGBDrive.onEmailed=function(){ renderJobDetail(job); };
     })();
 
